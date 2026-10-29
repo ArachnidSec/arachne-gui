@@ -33,7 +33,7 @@ export const ROSTER = [
     color: '#6ee7b7',
     shape: 'round',
     tagline: 'maps what is reachable before anyone guesses',
-    tools: ['scan_surface', 'fs_list', 'fs_read', 'fs_grep', 'http_probe', 'http_history', 'tcp_probe', 'shell', 'ledger_read', 'ledger_write'],
+    tools: ['scan_surface', 'fs_list', 'fs_read', 'fs_grep', 'http_probe', 'http_diff', 'http_history', 'tcp_probe', 'shell', 'ledger_read', 'ledger_write'],
     prompt: `You map attack surface. You do not judge exploitability — that is someone else's job and you are fast because you leave it alone.
 
 PROCEDURE
@@ -70,7 +70,7 @@ You never claim a crash you have not seen. You never pad the list.`,
     color: '#fca5a5',
     shape: 'wide',
     tagline: 'turns a candidate into a crashing process',
-    tools: ['fs_read', 'fs_grep', 'fs_write', 'fs_edit', 'shell', 'build_target', 'run_harness', 'scan_sinks', 'ledger_read', 'ledger_write'],
+    tools: ['fs_read', 'fs_grep', 'fs_write', 'fs_edit', 'shell', 'build_target', 'run_harness', 'scan_sinks', 'http_probe', 'http_diff', 'ledger_read', 'ledger_write'],
     prompt: `You build the smallest thing that crashes. Theory is not your output; a process exiting on a signal is.
 
 PROCEDURE
@@ -89,7 +89,7 @@ Never edit code outside pocs/. Never ship a payload that damages the host.`,
     color: '#c4b5fd',
     shape: 'round',
     tagline: 'decides whether the crash is the bug you think it is',
-    tools: ['shell', 'fs_read', 'run_harness', 'verify_finding', 'finding_write', 'scan_sinks', 'ledger_read', 'ledger_write'],
+    tools: ['shell', 'fs_read', 'run_harness', 'verify_finding', 'http_diff', 'finding_write', 'scan_sinks', 'ledger_read', 'ledger_write'],
     prompt: `You take a crash and decide what it means. The first crash is rarely the interesting one.
 
 PROCEDURE

@@ -431,7 +431,105 @@ export const TOOLS = {
       };
     },
   },
+  http_diff: {
+    ...def('http_diff', 'Send the same request as two identities and compare. Use expect:"same" for BOLA/IDOR (B receives A\'s object verbatim — equality is the leak) and expect:"different" for an authorization bypass (the control gets 403, the test gets 200). Volatile tokens are stripped before comparison. Run it twice: the second matching run promotes reproduced to confirmed.', {
+      a: { type: 'object', description: 'identity A / control request: {url, session, method?, body?, headers?}' },
+      b: { type: 'object', description: 'identity B / test request: same shape, different session' },
+      expect: { type: 'string', enum: ['same', 'different'], description: 'same = B sees what A sees (leak); different = status or body diverges (bypass)' },
+      note: { type: 'string' },
+    }, ['a', 'b']),
+    run: async (cfg, args, ctx) => {
+      const once = (spec) => httpProbe(cfg, {
+        url: spec?.url,
+        session: spec?.session || '',
+        method: spec?.method || 'GET',
+        headers: spec?.headers || {},
+        body: spec?.body ?? null,
+      });
+      const [ra, rb] = await Promise.all([once(args.a), once(args.b)]);
+      if (!ra.ok || !rb.ok) {
+        return { ok: false, output: `probe failed: ${(!ra.ok && ra.output) || (!rb.ok && rb.output)}`.slice(0, 800) };
+      }
 
+      const bodyOf = (out) => String(out).split('--- body ---')[1]?.trim() || '';
+      const normalize = (t) => t
+        .replace(/[0-9a-f]{8,}-[0-9a-f-]{4,}/gi, 'X')
+        .replace(/\b[0-9a-f]{16,}\b/gi, 'X')
+        .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, 'X')
+        .replace(/\b\d{10,13}\b/g, 'X')
+        .slice(0, 4000);
+
+      const sa = ra.meta?.status;
+      const sb = rb.meta?.status;
+      const na = normalize(bodyOf(ra.output));
+      const nb = normalize(bodyOf(rb.output));
+      const statusDiffers = sa !== sb;
+      const bodyDiffers = na !== nb;
+      const expect = args.expect === 'same' ? 'same' : 'different';
+      // equality across identities only means a leak if the URL names an object;
+      // otherwise it is just a public page and both sides agree for the right reason
+      const targetPath = (() => { try { const u = new URL(args.a?.url); return u.pathname + u.search; } catch { return ''; } })();
+      const objectPath = /\/\d+|\/[0-9a-f]{8,}|[?&](id|uid|user|account|order|item|doc)=/i.test(targetPath);
+      const sameShape = !statusDiffers && !bodyDiffers;
+      const proves = expect === 'same' ? (sameShape && objectPath) : (statusDiffers || bodyDiffers);
+
+      const digest = crypto.createHash('sha256').update(`${expect}|${sa}|${sb}|${na}|${nb}`).digest('hex').slice(0, 16);
+      const id = `http:${digest}`;
+      const existing = ctx.store.listFindings().find((f) => f.id === id);
+
+      const requestLine = (spec, res) => `${String(spec?.method || 'GET').toUpperCase()} ${spec?.url} [${spec?.session || 'no session'}] -> ${res.meta?.status}`;
+      const evidence = [
+        `expect ${expect}`,
+        requestLine(args.a, ra),
+        requestLine(args.b, rb),
+        '',
+        '--- A body ---',
+        bodyOf(ra.output).slice(0, 900),
+        '',
+        '--- B body ---',
+        bodyOf(rb.output).slice(0, 900),
+        '',
+        `digest ev_${digest}`,
+      ].join('\n');
+
+      const status = proves ? (existing ? 'confirmed' : 'reproduced') : 'dismissed';
+      const pathOf = (u) => { try { return new URL(u).pathname; } catch { return String(u || '').slice(0, 60); } };
+
+      const finding = ctx.store.addFinding({
+        id,
+        title: args.note || (expect === 'same'
+          ? `B received A's response on ${pathOf(args.a?.url)}`
+          : `authorization differs on ${pathOf(args.a?.url)}`),
+        severity: proves ? 'high' : 'info',
+        cwe: proves ? 'CWE-639' : '',
+        file: String(args.a?.url || ''),
+        line: 0,
+        evidence,
+        evidenceId: `ev_${digest}`,
+        status,
+        source: 'http_diff',
+        kind: proves ? (expect === 'same' ? 'object-leak' : 'authz-bypass') : 'negative-control',
+      });
+      ctx.emit?.({ type: 'finding', finding });
+
+      const verdict = proves
+        ? (expect === 'same' ? 'LEAK — B received the control response' : 'DIVERGENCE — access differs from the control')
+        : (expect === 'same'
+          ? (sameShape ? 'NOT AN OBJECT ENDPOINT — identical, but the path names no object' : 'NO LEAK — responses differ')
+          : 'NO DIVERGENCE — same response as the control');
+      return {
+        ok: true,
+        output: [
+          `control: ${sa}   test: ${sb}`,
+          `normalized body: ${bodyDiffers ? 'differs' : 'identical'}`,
+          `verdict: ${verdict}`,
+          `finding: ${finding.id} -> ${finding.status}`,
+          status === 'reproduced' ? 'Run the same pair once more to confirm it.' : '',
+        ].filter(Boolean).join('\n'),
+        meta: { finding, prove: proves, digest },
+      };
+    },
+  },
 };
 
 /** Tool defs a model sees, filtered by the agent's allowlist and the policy. */

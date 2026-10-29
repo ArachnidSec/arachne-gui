@@ -161,6 +161,28 @@ hashes the output into an evidence id (`ev_<sha256>`), and demotes the finding i
 it does not reproduce. Review evidence and a validated bug are different things,
 and the difference is enforced in code rather than requested in a prompt.
 
+## Authorization bugs (IDOR / BOLA)
+
+The verifier is not only for crashes. `http_diff` proves an authorization bug by
+sending the same request as two identities and comparing:
+
+```jsonc
+http_diff { "expect": "same",
+            "a": { "url": "/orders/8412", "session": "alice" },
+            "b": { "url": "/orders/8412", "session": "bob" } }
+→ verdict: LEAK — B received the control response
+  finding: http:90dc4a61e976f7c5 -> reproduced   (run again → confirmed)
+```
+
+`expect: "same"` is the BOLA shape — B receiving A's object verbatim *is* the
+bug, so equality is the signal. `expect: "different"` is the bypass shape, where
+a control gets 403 and the test gets 200. Two guards keep it honest: volatile
+tokens (timestamps, nonces, uuids) are normalized away before comparing, and
+equality only counts when the URL actually names an object — a public page
+answers identically for the right reason and is recorded as *not an object
+endpoint*. The `web-authz` skill carries the full method, including negative
+controls.
+
 ## Engagements
 
 The authorization record, and the folder everything lands in:
@@ -195,8 +217,11 @@ Everything runs in-process, on your machine, and every brake is local and visibl
 Tools: `fs_read`, `fs_write`, `fs_edit`, `fs_list`, `fs_grep`, `shell`,
 `scan_surface`, `scan_sinks`, `http_probe`, `http_history`, `tcp_probe`,
 `build_target`, `run_harness`, `verify_finding`, `finding_write`, `ledger_write`,
-`ledger_read`, `intent_write`, `intent_status`. The rail console runs any of them
-by hand.
+`ledger_read`, `intent_write`, `intent_status`, `entity_upsert`, `entity_list`,
+`http_diff`. The rail console runs any of them by hand.
+
+`docs/BENCHMARKS.md` covers how to measure the room against an external suite and
+how to write your own challenge with decoys and a negative control.
 
 ## The hunt pipeline
 

@@ -135,6 +135,7 @@ export async function* runTurn({
         ledger: runtime.ledger,
         engagements: runtime.engagements,
         engagementId: runtime.engagements?.active?.()?.id || null,
+        campaignId: runtime.campaigns?.active?.()?.id || null,
         emit: emit || (() => {}),
         resolve: (p) => cfg.workspace,
       });

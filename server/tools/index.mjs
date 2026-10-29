@@ -468,13 +468,20 @@ export const TOOLS = {
       const expect = args.expect === 'same' ? 'same' : 'different';
       // equality across identities only means a leak if the URL names an object;
       // otherwise it is just a public page and both sides agree for the right reason
-      const targetPath = (() => { try { const u = new URL(args.a?.url); return u.pathname + u.search; } catch { return ''; } })();
-      const objectPath = /\/\d+|\/[0-9a-f]{8,}|[?&](id|uid|user|account|order|item|doc)=/i.test(targetPath);
+      const parsedTarget = (() => { try { return new URL(args.a?.url); } catch { return null; } })();
+      const segs = (parsedTarget?.pathname || '').split('/').filter(Boolean);
+      const staticSeg = segs.some((x) => ['public', 'login', 'logout', 'health', 'status', 'docs', 'static', 'assets', 'favicon.ico'].includes(x));
+      // an id, a uuid, an id-shaped query param, or a deep path that names a resource
+      const hasId = /\d/.test(parsedTarget?.pathname || '')
+        || /[0-9a-f]{8,}/i.test(parsedTarget?.pathname || '')
+        || /[?&](id|uid|user|account|order|item|doc)=/i.test(parsedTarget?.search || '');
+      const objectPath = hasId || (segs.length >= 3 && !staticSeg);
       const sameShape = !statusDiffers && !bodyDiffers;
       const proves = expect === 'same' ? (sameShape && objectPath) : (statusDiffers || bodyDiffers);
 
       const digest = crypto.createHash('sha256').update(`${expect}|${sa}|${sb}|${na}|${nb}`).digest('hex').slice(0, 16);
-      const id = `http:${digest}`;
+      // during a campaign the finding is scoped to it, so a re-run scores its own proof
+      const id = ctx.campaignId ? `http:${ctx.campaignId}:${digest}` : `http:${digest}`;
       const existing = ctx.store.listFindings().find((f) => f.id === id);
 
       const requestLine = (spec, res) => `${String(spec?.method || 'GET').toUpperCase()} ${spec?.url} [${spec?.session || 'no session'}] -> ${res.meta?.status}`;
@@ -528,6 +535,114 @@ export const TOOLS = {
         ].filter(Boolean).join('\n'),
         meta: { finding, prove: proves, digest },
       };
+    },
+  },
+  access_gain: {
+    ...def('access_gain', 'Record that you reached a host at a privilege level, and what it was reached through. This is how a pivot chain becomes visible: host -> credential -> next host.', {
+      host: { type: 'string', description: 'host or host:port you reached' },
+      level: { type: 'string', enum: ['read', 'user', 'root', 'admin'], description: 'what you can do there' },
+      via: { type: 'string', description: 'how: IDOR, leaked key, command injection, credentials…' },
+      credential: { type: 'string', description: 'the secret or session that unlocked it' },
+      evidence: { type: 'string', description: 'the response or command that proves it' },
+    }, ['host', 'level']),
+    run: (cfg, args, ctx) => {
+      const engagement = ctx.engagementId || null;
+      const hostEntity = ctx.ledger.upsertEntity({
+        type: 'host', key: args.host, attrs: { reached: args.level }, confidence: 'observed', engagement,
+      });
+      const accessEntity = ctx.ledger.upsertEntity({
+        type: 'access',
+        key: `${args.host} (${args.level})`,
+        attrs: { via: args.via || '', at: new Date().toISOString(), ...(args.evidence ? { evidence: String(args.evidence).slice(0, 300) } : {}) },
+        confidence: 'observed',
+        engagement,
+      });
+      ctx.ledger.link(hostEntity.id, accessEntity.id, args.level === 'admin' ? 'ADMIN_OF' : 'ACCESS_ON');
+      if (args.credential) {
+        const credEntity = ctx.ledger.upsertEntity({
+          type: 'credential',
+          key: String(args.credential).slice(0, 80),
+          attrs: { unlocks: args.host },
+          confidence: 'observed',
+          engagement,
+        });
+        ctx.ledger.link(credEntity.id, hostEntity.id, 'UNLOCKS');
+      }
+      ctx.ledger.addEntry({
+        surface: args.host,
+        action: `access ${args.level}`,
+        result: args.evidence || args.via || 'access recorded',
+        confidence: 'observed',
+        engagement,
+      });
+      ctx.emit?.({ type: 'entity', entity: accessEntity });
+
+      // privileged access with a receipt is itself a finding
+      let finding = null;
+      if (['admin', 'root'].includes(args.level)) {
+        finding = ctx.store.addFinding({
+          id: ctx.campaignId ? `access:${ctx.campaignId}:${args.host}:${args.level}` : `access:${args.host}:${args.level}`,
+          title: `${args.level} access on ${args.host}`,
+          severity: 'critical',
+          cwe: 'CWE-522',
+          file: args.host,
+          line: 0,
+          evidence: [args.via ? `via ${args.via}` : '', args.evidence || ''].filter(Boolean).join('\n').slice(0, 1200),
+          evidenceId: `ev_${(args.credential || args.host).replace(/[^a-z0-9]/gi, '').slice(0, 12)}`,
+          status: args.evidence ? 'confirmed' : 'reproduced',
+          campaignId: ctx.campaignId || null,
+          source: 'access_gain',
+        });
+        ctx.emit?.({ type: 'finding', finding });
+      }
+
+      return {
+        ok: true,
+        output: [
+          `access ${accessEntity.id} — ${args.host} at ${args.level}${args.via ? ` via ${args.via}` : ''}`,
+          finding ? `finding ${finding.id} -> ${finding.status}` : '',
+        ].filter(Boolean).join('\n'),
+        meta: { access: accessEntity, host: hostEntity },
+      };
+    },
+  },
+  attack_path: {
+    ...def('attack_path', 'Shortest chain of known links from anything you already hold to a target host. Returns the steps, or says nothing connects yet.', {
+      to: { type: 'string', description: 'target host or entity key' },
+    }, ['to']),
+    run: (cfg, args, ctx) => {
+      const entities = ctx.ledger.entities;
+      const byId = new Map(entities.map((e) => [e.id, e]));
+      const target = entities.find((e) => e.key.toLowerCase().includes(String(args.to).toLowerCase()));
+      if (!target) return { ok: false, output: `no entity matching "${args.to}" in state` };
+
+      const adjacency = new Map();
+      for (const e of entities) {
+        for (const l of e.links || []) {
+          if (!adjacency.has(e.id)) adjacency.set(e.id, []);
+          adjacency.get(e.id).push({ to: l.to, rel: l.rel });
+        }
+      }
+      const starts = entities.filter((e) => e.type === 'credential' || e.type === 'access');
+      for (const start of starts) {
+        const queue = [[start.id]];
+        const seen = new Set([start.id]);
+        while (queue.length) {
+          const path = queue.shift();
+          const current = path[path.length - 1];
+          if (current === target.id) {
+            const steps = path.map((id) => byId.get(id)).filter(Boolean)
+              .map((e) => `${e.type}:${e.key}`);
+            return { ok: true, output: `path (${steps.length - 1} hops):\n  ${steps.join('\n  → ')}` };
+          }
+          for (const edge of adjacency.get(current) || []) {
+            if (seen.has(edge.to)) continue;
+            seen.add(edge.to);
+            queue.push([...path, edge.to]);
+          }
+        }
+      }
+      return { ok: true, output: `no chain from held access to ${target.key} yet — ${starts.length} starting point(s)` };
     },
   },
 };

@@ -418,6 +418,14 @@ kbd {
 .rail-tabs button:hover { color: var(--text-2); }
 .rail-tabs button.on { color: var(--text); border-bottom-color: var(--cream); }
 
+.campaign {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 12px 0 4px; padding: 8px 10px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.campaign.on { border-color: rgba(252, 211, 77, .28); background: rgba(252, 211, 77, .05); }
+.camp-name { font-family: var(--mono); font-size: 9.5px; color: var(--muted); line-height: 1.5; }
+
 .rail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 24px; }
 .tab-pane { display: block; }
 

@@ -5,3 +5,4 @@ workspace/reports/
 workspace/engagements/
 node_modules/
 .DS_Store
+bench/results/

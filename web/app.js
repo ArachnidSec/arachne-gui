@@ -407,7 +407,38 @@ async function loadLedger() {
     $('#intents').innerHTML = (intents || []).filter((i) => i.status !== 'done').slice(0, 6)
       .map((i) => `<div class="intent-row ${i.status}">${escapeHtml(i.title)}</div>`).join('');
     renderEntities(entities || []);
+    renderCampaign();
   } catch { /* server older than ui */ }
+}
+
+async function renderCampaign() {
+  const box = $('#campaign');
+  if (!box) return;
+  try {
+    const { active } = await api('/api/campaigns');
+    const text = $('#campaign-text');
+    box.classList.toggle('on', Boolean(active));
+    if (active) {
+      const secs = Math.round(active.elapsedMs / 1000);
+      const t = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      text.textContent = `${active.name} · ${active.turns} turns · ${active.tokens.total} tok · ${t} · ${active.findings.confirmed} confirmed`;
+      $('#campaign-btn').textContent = 'stop';
+      $('#campaign-btn').onclick = async () => {
+        try { await api('/api/campaigns/stop', { method: 'POST' }); renderCampaign(); toast('campaign stopped'); }
+        catch (err) { toast(err.message); }
+      };
+    } else {
+      text.textContent = 'no campaign running';
+      $('#campaign-btn').textContent = 'start';
+      $('#campaign-btn').onclick = async () => {
+        try {
+          const r = await api('/api/campaigns', { method: 'POST', body: { name: $('#thread-title').textContent.slice(0, 60) } });
+          renderCampaign();
+          toast(`campaign ${r.campaign.id} started`);
+        } catch (err) { toast(err.message); }
+      };
+    }
+  } catch { /* older server */ }
 }
 
 function renderEntities(entities) {
@@ -419,7 +450,7 @@ function renderEntities(entities) {
   }
   const groups = {};
   for (const e of entities) (groups[e.type] = groups[e.type] || []).push(e);
-  const order = ['target', 'host', 'service', 'credential', 'path', 'note'];
+  const order = ['target', 'host', 'service', 'credential', 'access', 'path', 'note'];
   box.innerHTML = order.filter((t) => groups[t]?.length).map((t) => `
     <div class="ent-group">
       <span class="t">${t}</span>

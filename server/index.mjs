@@ -12,13 +12,15 @@ import { executeTool, TOOLS } from './tools/index.mjs';
 import { Ledger } from './ledger.mjs';
 import { Engagements } from './engagements.mjs';
 import { loadSkills, selectSkills, publicSkills } from './skills.mjs';
+import { Campaigns } from './campaigns.mjs';
 
 const cfg = loadConfig();
 const store = new Store(cfg.dataDir);
 const ledger = new Ledger(cfg.dataDir);
 const engagements = new Engagements(cfg, cfg.dataDir);
+const campaigns = new Campaigns(cfg.dataDir, store);
 const skills = loadSkills(path.join(ROOT, 'skills'));
-const runtime = { store, ledger, engagements, skills };
+const runtime = { store, ledger, engagements, skills, campaigns };
 const WEB = path.join(ROOT, 'web');
 
 const MIME = {
@@ -219,6 +221,7 @@ const server = http.createServer(async (req, res) => {
         findings: store.listFindings().length,
         engagement: engagements.active(),
         ledger: ledger.summary(),
+        campaign: campaigns.active() ? campaigns.summary(campaigns.active()) : null,
         skills: publicSkills(skills),
       });
       return;
@@ -363,6 +366,7 @@ const server = http.createServer(async (req, res) => {
         ledger,
         engagements,
         engagementId: engagements.active()?.id || null,
+        campaignId: campaigns.active()?.id || null,
         emit: () => {},
         resolve: () => cfg.workspace,
       });
@@ -393,6 +397,9 @@ const server = http.createServer(async (req, res) => {
           signal: controller.signal,
           runtime,
         })) {
+          if (ev.type === 'done' && ev.usage) {
+            campaigns.record({ usage: ev.usage, cost: ev.cost, ms: ev.ms, agent: ev.agentId });
+          }
           send(ev);
         }
       } catch (err) {
@@ -466,6 +473,7 @@ const server = http.createServer(async (req, res) => {
             if (ev.type === 'token') note(ev.agentId, { text: (collected.get(ev.agentId)?.text || '') + ev.text });
             if (ev.type === 'replace') note(ev.agentId, { text: ev.text });
             if (ev.type === 'done') {
+              campaigns.record({ usage: ev.usage, cost: ev.cost, ms: ev.ms, agent: ev.agentId });
               note(ev.agentId, { text: ev.text, done: true });
               const silent = /^\s*\[\[(silent|tapback|nothing)\]\]/i.test(ev.text || '');
               if (silent) {
@@ -522,6 +530,7 @@ const server = http.createServer(async (req, res) => {
               note(agentId, { tools: [...(prev.tools || []), { name: ev.name, ok: ev.ok, ms: ev.ms }] });
             }
             if (ev.type === 'done') {
+              campaigns.record({ usage: ev.usage, cost: ev.cost, ms: ev.ms, agent: agentId });
               const msg = store.appendMessage(thread.id, {
                 role: 'agent',
                 agentId,
@@ -546,6 +555,32 @@ const server = http.createServer(async (req, res) => {
 
     if (route === '/api/skills' && req.method === 'GET') {
       json(res, 200, { skills: publicSkills(skills) });
+      return;
+    }
+
+    if (route === '/api/campaigns' && req.method === 'GET') {
+      json(res, 200, { campaigns: campaigns.summaries().slice(0, 20), active: campaigns.active() ? campaigns.summary(campaigns.active()) : null });
+      return;
+    }
+
+    if (route === '/api/campaigns' && req.method === 'POST') {
+      const body = await readBody(req);
+      try {
+        const campaign = campaigns.start({ name: body.name, challenge: body.challenge });
+        json(res, 200, { campaign: campaigns.summary(campaign) });
+      } catch (err) {
+        json(res, 400, { error: err.message });
+      }
+      return;
+    }
+
+    if (route === '/api/campaigns/stop' && req.method === 'POST') {
+      const campaign = campaigns.stop();
+      if (!campaign) {
+        json(res, 400, { error: 'no campaign running' });
+        return;
+      }
+      json(res, 200, { campaign: campaigns.summary(campaign) });
       return;
     }
 

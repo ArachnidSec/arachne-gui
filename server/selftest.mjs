@@ -16,6 +16,7 @@ import { runShell, validateCommand } from './tools/shell.mjs';
 import { Store } from './store.mjs';
 import { Ledger } from './ledger.mjs';
 import { Engagements } from './engagements.mjs';
+import { Campaigns } from './campaigns.mjs';
 import { executeTool } from './tools/index.mjs';
 
 const cfg = loadConfig();
@@ -87,6 +88,27 @@ check('verify_finding promotes to confirmed', Boolean(confirmed), verify.output.
 const evidenceIds = store.listFindings().map((f) => f.evidenceId || '').join(' ');
 check('verification attaches an evidence id', /ev_[0-9a-f]{16}/.test(evidenceIds), evidenceIds.trim());
 
+// ---- 5b. campaigns measure cost per finding
+const campStore = new Store(tmp);
+const campaigns = new Campaigns(tmp, campStore);
+const camp = campaigns.start({ name: 'selftest' });
+campaigns.record({ usage: { prompt: 1200, completion: 300 }, cost: 0.0021, ms: 5000, agent: 'hunter' });
+campStore.addFinding({ id: 'camp-test-1', title: 'test finding', severity: 'high', cwe: 'CWE-121', evidence: 'boom', status: 'confirmed', verifiedAt: Date.now() });
+const cs = campaigns.summary(camp);
+check('campaign attributes turns and tokens', cs.turns === 1 && cs.tokens.total === 1500, `${cs.tokens.total} tok`);
+check('campaign counts confirmed findings', cs.findings.confirmed === 1, `${cs.findings.confirmed} confirmed`);
+check('campaign prices the finding', cs.costPerConfirmed > 0 && cs.timeToFirstConfirmedMs !== null, `$${cs.costPerConfirmed}`);
+
+// ---- 5c. post-exploitation state
+const ledgerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arachne-post-'));
+const ledger2 = new Ledger(ledgerDir);
+const accessRun = await executeTool(cfg, 'access_gain', {
+  host: '10.0.0.9:8443', level: 'admin', via: 'leaked key', credential: 'ak_test', evidence: 'FLAG{test}',
+}, { store: campStore, ledger: ledger2, emit: () => {}, resolve: () => cfg.workspace });
+check('access_gain records a privileged reach', /access .* 10\.0\.0\.9:8443 at admin/.test(accessRun.output));
+check('access_gain links credential to host', ledger2.entities.some((e) => e.type === 'credential' && (e.links || []).some((l) => l.rel === 'UNLOCKS')));
+check('privileged access with a receipt is a finding', campStore.listFindings().some((f) => f.source === 'access_gain' && f.status === 'confirmed'));
+
 // ---- 6. ledger semantics
 const ledger = new Ledger(tmp);
 const e1 = ledger.addEntry({ surface: 'vuln.c:17', action: 'read store_record', result: 'strcpy into char[64]' });
@@ -110,6 +132,7 @@ check('active engagement resolves its report dir', engagements.dirFor('reports')
 
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 try { fs.rmSync(engRoot, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(ledgerDir, { recursive: true, force: true }); } catch {}
 try { fs.unlinkSync(path.join(cfg.workspace, 'pocs/selftest-vuln')); } catch {}
 try { fs.rmSync(path.join(cfg.workspace, 'pocs/selftest-vuln.dSYM'), { recursive: true, force: true }); } catch {}
 

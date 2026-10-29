@@ -1,0 +1,28 @@
+{
+  "name": "001-bola-profile",
+  "objective": "Prove that one account can read another account's profile.",
+  "targets": [
+    { "script": "bench/targets/authz/app.mjs", "port": 8093, "readyPath": "/public" }
+  ],
+  "reference": [
+    { "tool": "http_probe", "args": { "url": "http://127.0.0.1:8093/login?user=alice", "session": "alice" } },
+    { "tool": "http_probe", "args": { "url": "http://127.0.0.1:8093/login?user=bob", "session": "bob" } },
+    { "tool": "http_diff", "args": {
+        "expect": "same",
+        "a": { "url": "http://127.0.0.1:8093/users/alice/profile", "session": "alice" },
+        "b": { "url": "http://127.0.0.1:8093/users/alice/profile", "session": "bob" },
+        "note": "bob reads alice's profile via BOLA" } },
+    { "tool": "http_diff", "args": {
+        "expect": "same",
+        "a": { "url": "http://127.0.0.1:8093/users/alice/profile", "session": "alice" },
+        "b": { "url": "http://127.0.0.1:8093/users/alice/profile", "session": "bob" },
+        "note": "bob reads alice's profile via BOLA" } }
+  ],
+  "decoys": [
+    { "tool": "http_probe", "args": { "url": "http://127.0.0.1:8093/orders/1", "session": "bob" },
+      "expect": "not-found", "why": "/orders/:id checks ownership" }
+  ],
+  "verify": [
+    { "type": "finding", "status": "confirmed", "cwe": "CWE-639" }
+  ]
+}

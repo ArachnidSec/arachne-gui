@@ -11,6 +11,7 @@
     "start": "node server/index.mjs",
     "dev": "node --watch server/index.mjs",
     "selftest": "node server/selftest.mjs",
-    "mock": "node server/mockengine.mjs 8099"
+    "mock": "node server/mockengine.mjs 8099",
+    "bench": "node bench/run.mjs --all"
   }
 }

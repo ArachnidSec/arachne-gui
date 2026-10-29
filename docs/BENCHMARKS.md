@@ -57,12 +57,24 @@ with the expected CWE, inside the budget. Two rules keep it honest:
   "nothing confirmed"; anything else is a false positive, which is worse than a
   miss.
 
-## What we currently measure poorly
+## What is now scored
 
-- **Web authorization** is provable (`http_diff`) but not yet scored — there is
-  no bundled target with two accounts and an object graph.
-- **Post-exploitation** is out of scope: the room reads code and builds
-  harnesses; it does not pivot between hosts.
-- **Cost and time per finding** are tracked per turn but not per campaign.
+The three gaps that made previous numbers meaningless are closed:
 
-Those are the three numbers worth adding before quoting any success rate.
+- **Web authorization** has a bundled target with two accounts, an object graph
+  and a decoy (`bench/`), scored on a confirmed CWE-639.
+- **Post-exploitation** is modeled as a chain: `access_gain` records a reach, its
+  credential and its evidence, and the pivot challenge scores the flag from an
+  internal service that only the leaked key unlocks.
+- **Cost and time per finding** come from the campaign: turns, tokens, cost,
+  wall time, time to first confirmed, and cost per confirmed.
+
+## Still out of scope
+
+- **Multi-host ranges.** The pivot here is two local services, not an enterprise
+  range with several subnets. A real range needs containers and network
+  namespaces, which is a separate project.
+- **Scoring the agent's restraint.** Decoys are checked but not yet scored; a
+  false positive should cost more than a miss.
+- **Reproducibility across models.** Results are per run; there is no comparison
+  table yet.

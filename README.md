@@ -183,6 +183,54 @@ answers identically for the right reason and is recorded as *not an object
 endpoint*. The `web-authz` skill carries the full method, including negative
 controls.
 
+## Campaigns
+
+Start one before a piece of work; every turn is attributed to it.
+
+```bash
+arachne campaign start "acme checkout"
+arachne campaign              # turns, tokens, cost, time to first finding
+arachne campaign stop
+```
+
+A finished campaign reports what the per-turn numbers cannot: **turns, tokens,
+cost, wall time, time to first confirmed finding, and cost per confirmed**. The
+rail shows a live strip. Findings created during a campaign are scoped to it, so
+a re-run scores its own proof instead of inheriting an old result.
+
+## Post-exploitation
+
+A pivot is a chain, so the room models one:
+
+```
+access_gain { host: "10.0.0.9:8443", level: "admin",
+              via: "api key leaked through BOLA", credential: "ak_…",
+              evidence: "…" }
+→ host ──EXPOSES──> service
+   credential ──UNLOCKS──> host ──ADMIN_OF──> access
+```
+
+`attack_path { to: "10.0.0.9:8443" }` walks the links and prints the chain from
+whatever you already hold. A privileged reach **with a receipt** is recorded as a
+finding; without one it stays `reproduced`.
+
+This is state and proof, not automatic exploitation. The room does not pivot on
+its own — it records what was reached, what it was reached through, and refuses
+to call it confirmed without evidence.
+
+## Benchmarks
+
+`bench/` ships two scored challenges against a bundled two-account app: a BOLA
+and a pivot through a leaked key into an internal service.
+
+```bash
+npm run bench
+```
+
+Reference mode replays a scripted playbook to prove the bench itself (targets,
+tools, scorer, decoys); room mode hands the objective to an agent. See
+[bench/README.md](bench/README.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
 ## Engagements
 
 The authorization record, and the folder everything lands in:

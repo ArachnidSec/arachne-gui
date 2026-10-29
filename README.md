@@ -10,6 +10,19 @@ and whatever local inference runtime you already have.
 
 ![the room](docs/screenshot.png)
 
+## How it runs
+
+Nothing to download or install as an application. `gui/` is a **local server that
+serves its own interface**: start the process, open the URL, and the browser is
+the GUI. There is no build step, no bundler, no native binary, no `.dmg`.
+
+At boot it probes each configured engine — the default is `http://127.0.0.1:11434`,
+which is Ollama — asks it what models it has and what each one can do, then routes
+a model to every role. Ollama models that advertise `tools` are eligible for
+tool-using roles; the rest are not, because a model without a tool channel cannot
+call a harness. If nothing answers, the app still starts and says so in the
+bottom-left pill, and the deterministic half of the pipeline still runs.
+
 ## Run it
 
 ```bash
@@ -214,6 +227,25 @@ they ran.
 Auto-pick prefers tool-capable models and sizes them by role: small for fan-out
 roles, large for the deep ones. A role whose engine has nothing falls back to any
 live engine that does.
+
+## Adding a router
+
+**+ engine** in the routing rail takes a label, a base URL, a protocol
+(`ollama` or `openai`-compatible) and an optional API key. Presets fill in
+OpenRouter, llama.cpp and a remote Ollama. Once added, every live model shows up
+in the per-role dropdowns, so you can point `static` at a big hosted model and
+keep `scout` on a small local one.
+
+```bash
+POST /api/engines { "label": "openrouter", "kind": "openai",
+                    "base": "https://openrouter.ai/api/v1", "apiKey": "sk-…" }
+→ { "key": "openrouter", "reachable": true, "models": ["anthropic/claude-sonnet-4.6", …] }
+```
+
+The key is written to `config.json` (which is gitignored) and used as a bearer
+token on every request to that engine. It is never sent back to the browser —
+`/api/health` returns `hasKey: true`, not the value. `DELETE /api/engines/<key>`
+removes one and re-points any role that used it.
 
 ## Engines
 

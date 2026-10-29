@@ -23,6 +23,11 @@
       </div>
     </div>
 
+    <div class="view-switch" id="view-switch" role="tablist">
+      <button data-view="room" class="on" role="tab">agents</button>
+      <button data-view="chat" role="tab">chat</button>
+    </div>
+
     <button class="new-room" id="new-room">
       <span class="plus">+</span> new room
     </button>
@@ -50,11 +55,7 @@
         <h1 id="thread-title">new room</h1>
         <div class="thread-meta" id="thread-meta"></div>
       </div>
-      <div class="seg" id="mode-seg" role="tablist">
-        <button data-mode="room" class="on">room</button>
-        <button data-mode="chat">chat</button>
-        <button data-mode="hunt">hunt</button>
-      </div>
+      <button class="hunt-btn" id="hunt-btn" title="run the seven-stage pipeline">hunt</button>
     </header>
 
     <section id="transcript" class="transcript"></section>
@@ -121,8 +122,31 @@
     </section>
 
     <section class="rail-section" id="sec-routing">
-      <div class="rail-head"><span>routing</span><button class="ghost tiny" id="route-refresh">refresh</button></div>
+      <div class="rail-head">
+        <span>routing</span>
+        <span class="rail-actions">
+          <button class="ghost tiny" id="engine-add-toggle" title="add an engine or router">+ engine</button>
+          <button class="ghost tiny" id="route-refresh">refresh</button>
+        </span>
+      </div>
       <div id="routing" class="routing"></div>
+      <form class="engine-add hidden" id="engine-add">
+        <select id="eng-preset" class="text-input">
+          <option value="">preset…</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="llamacpp">llama.cpp</option>
+          <option value="ollama">Ollama (remote)</option>
+          <option value="custom">custom</option>
+        </select>
+        <input id="eng-label" class="text-input" placeholder="label" autocomplete="off" />
+        <select id="eng-kind" class="text-input">
+          <option value="openai">openai-compatible</option>
+          <option value="ollama">ollama</option>
+        </select>
+        <input id="eng-base" class="text-input" placeholder="https://host/v1" autocomplete="off" spellcheck="false" />
+        <input id="eng-key" class="text-input" type="password" placeholder="api key (optional, stays local)" autocomplete="off" />
+        <button class="ghost" id="engine-add-run" type="button">add engine</button>
+      </form>
     </section>
 
     <section class="rail-section" id="sec-console">

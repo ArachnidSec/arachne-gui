@@ -303,14 +303,46 @@ function renderHealth() {
   const routed = Object.values(h.roles).filter((r) => r.model).length;
   dot.className = `dot ${live.length ? 'ok' : 'bad'}`;
   $('#engine-label').textContent = live.length
-    ? `${live.map((e) => e.label).join(' · ')} — ${routed}/6 roles routed`
+    ? `${live.map((e) => e.label).join(' · ')} — ${routed}/${Object.keys(h.roles).length} roles routed`
     : 'no engine reachable';
 
   const box = $('#routing');
   box.innerHTML = '';
+
+  // every live model is a candidate for every role, not just the auto-pick
+  const choices = [];
+  for (const e of h.engines.filter((x) => x.ok)) {
+    for (const m of e.models) {
+      choices.push({ value: `${e.key}::${m.id}`, label: `${e.label} · ${m.id}`, tools: m.tools });
+    }
+  }
+
   for (const [role, r] of Object.entries(h.roles)) {
     const row = el('div', 'route-row');
-    row.innerHTML = `<span class="role">${role}</span><span class="val ${r.model ? '' : 'none'}" title="${escapeHtml(r.label)}">${escapeHtml(r.model || 'unrouted')}</span>`;
+    row.appendChild(el('span', 'role', role));
+    const sel = document.createElement('select');
+    sel.className = 'route-select';
+    sel.title = r.label || '';
+    sel.innerHTML = `<option value="">auto</option>` + choices
+      .map((c) => `<option value="${escapeHtml(c.value)}">${escapeHtml(c.label)}${c.tools ? '' : ' (no tools)'}</option>`)
+      .join('');
+    const current = r.engine?.key && r.model ? `${r.engine.key}::${r.model}` : '';
+    sel.value = choices.some((c) => c.value === current) ? current : '';
+    sel.onchange = async () => {
+      const [engineKey, ...rest] = sel.value.split('::');
+      const model = rest.join('::');
+      const target = engineKey || r.engine?.key || Object.keys(state.health.roles)[0];
+      try {
+        await api('/api/config', { method: 'POST', body: { roles: { [role]: { engine: target, model } } } });
+        state.health = await api('/api/health?refresh=1');
+        renderHealth();
+        updateComposerHint();
+        toast(`${role} → ${model || 'auto'}`);
+      } catch (err) {
+        toast(`route failed: ${err.message}`);
+      }
+    };
+    row.appendChild(sel);
     box.appendChild(row);
   }
 }
@@ -893,7 +925,9 @@ function closeAgentModal() {
 /* ------------------------------------------------------------------ events */
 
 function syncModeUI() {
-  $$('#mode-seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === state.mode));
+  const view = state.mode === 'chat' ? 'chat' : 'room';
+  $$('#view-switch button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+  $('#hunt-btn').classList.toggle('on', state.mode === 'hunt');
   $('#huntbar').classList.toggle('hidden', state.mode !== 'hunt');
   $('#composer').style.display = state.mode === 'hunt' ? 'none' : '';
   $('#input').placeholder = state.mode === 'chat' ? 'ask a question…' : 'ask the room…';
@@ -936,9 +970,62 @@ function wire() {
   $('#hunt-run').onclick = runHunt;
   $('#hunt-target').addEventListener('keydown', (e) => { if (e.key === 'Enter') runHunt(); });
 
-  $$('#mode-seg button').forEach((b) => {
-    b.onclick = () => setMode(b.dataset.mode);
+  $$('#view-switch button').forEach((b) => {
+    b.onclick = () => setMode(b.dataset.view === 'chat' ? 'chat' : 'room');
   });
+
+  $('#hunt-btn').onclick = () => setMode(state.mode === 'hunt' ? 'room' : 'hunt');
+
+  const ENGINE_PRESETS = {
+    openrouter: { label: 'openrouter', kind: 'openai', base: 'https://openrouter.ai/api/v1' },
+    llamacpp: { label: 'llama.cpp', kind: 'openai', base: 'http://127.0.0.1:8080/v1' },
+    ollama: { label: 'ollama-remote', kind: 'ollama', base: 'http://127.0.0.1:11434' },
+    custom: { label: '', kind: 'openai', base: '' },
+  };
+
+  $('#eng-preset').onchange = () => {
+    const preset = ENGINE_PRESETS[$('#eng-preset').value];
+    if (!preset) return;
+    $('#eng-label').value = preset.label;
+    $('#eng-kind').value = preset.kind;
+    $('#eng-base').value = preset.base;
+  };
+
+  $('#engine-add-toggle').onclick = () => {
+    $('#engine-add').classList.toggle('hidden');
+    if (!$('#engine-add').classList.contains('hidden')) $('#eng-label').focus();
+  };
+
+  $('#engine-add-run').onclick = async () => {
+    const base = $('#eng-base').value.trim();
+    if (!base) {
+      toast('base url required');
+      return;
+    }
+    try {
+      const r = await api('/api/engines', {
+        method: 'POST',
+        body: {
+          label: $('#eng-label').value.trim(),
+          base,
+          kind: $('#eng-kind').value,
+          apiKey: $('#eng-key').value.trim(),
+        },
+      });
+      state.health = await api('/api/health?refresh=1');
+      renderHealth();
+      toast(r.reachable
+        ? `${r.key} · ${r.models.length} model${r.models.length === 1 ? '' : 's'}`
+        : `${r.key} saved, unreachable (${r.error})`);
+      if (r.reachable) {
+        $('#engine-add').classList.add('hidden');
+        ['#eng-label', '#eng-base', '#eng-key'].forEach((sel) => { $(sel).value = ''; });
+        $('#eng-preset').value = '';
+      }
+    } catch (err) {
+      toast(`engine failed: ${err.message}`);
+    }
+  };
 
   $('#engine-toggle').onclick = async () => {
     $('#engine-label').textContent = 'probing…';

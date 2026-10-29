@@ -14,7 +14,21 @@ arachne talks to two wire protocols. Anything that speaks one of them can hold a
 ```
 
 `kind: "openai"` means `POST <base>/chat/completions` and `GET <base>/models`. The base
-must include `/v1` if your server wants it there.
+must include `/v1` if your server wants it there. An engine may also carry an
+`apiKey`, which is sent as `Authorization: Bearer …` and never returned to the
+browser.
+
+Add one from the UI with **+ engine** in the routing rail, or by API:
+
+```bash
+curl -X POST http://127.0.0.1:7777/api/engines \
+  -H 'content-type: application/json' \
+  -d '{"label":"openrouter","kind":"openai","base":"https://openrouter.ai/api/v1","apiKey":"sk-…"}'
+```
+
+Hosted routers work with the same shape — anything exposing an OpenAI-compatible
+`/chat/completions` and `/models`. Point a role at a specific model with the
+dropdowns, or `POST /api/config` with `{"roles":{"static":{"engine":"openrouter","model":"…"}}}`.
 
 ## Ollama
 

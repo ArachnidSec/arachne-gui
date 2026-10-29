@@ -15,6 +15,8 @@ const TOOL_MARKERS = [
   /\[TOOL_CALLS\]\s*(\[[\s\S]*?\])/g,
 ];
 
+const authHeader = (engine) => (engine?.apiKey ? { authorization: `Bearer ${engine.apiKey}` } : {});
+
 export class LLMError extends Error {
   constructor(message, { engine, status, body } = {}) {
     super(message);
@@ -251,7 +253,7 @@ export async function* streamChat({
       if (tools.length) body.tools = tools;
       const res = await fetch(`${base}/api/chat`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...authHeader(engine) },
         body: JSON.stringify(body),
         signal: abort.signal,
       });
@@ -304,7 +306,7 @@ export async function* streamChat({
     if (tools.length) body.tools = tools;
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeader(engine) },
       body: JSON.stringify(body),
       signal: abort.signal,
     });

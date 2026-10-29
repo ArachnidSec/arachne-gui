@@ -45,7 +45,14 @@ async function probeEngines() {
   const entries = Object.entries(cfg.engines);
   const probed = await Promise.all(
     entries.map(async ([key, def]) => {
-      const base = { key, label: def.label || key, kind: def.kind, base: def.base };
+      const base = {
+        key,
+        label: def.label || key,
+        kind: def.kind,
+        base: def.base,
+        apiKey: def.apiKey || '',
+        hasKey: Boolean(def.apiKey),
+      };
       try {
         const models = await listModels(def, { timeoutMs: 2500 });
         return { ...base, ok: true, models };
@@ -199,7 +206,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         host: describe(),
         workspace: cfg.workspace,
-        engines: routes.engines,
+        // the key stays on this machine: the browser only learns whether one exists
+        engines: routes.engines.map(({ apiKey, ...rest }) => rest),
         roles: routes.roles,
         policy: {
           shell: cfg.policy.shell,
@@ -218,6 +226,63 @@ const server = http.createServer(async (req, res) => {
 
     if (route === '/api/roster') {
       json(res, 200, { agents: publicRoster(), tools: Object.keys(TOOLS) });
+      return;
+    }
+
+    if (route === '/api/engines' && req.method === 'POST') {
+      const body = await readBody(req);
+      const label = String(body.label || '').trim();
+      const base = String(body.base || '').trim().replace(/\/+$/, '');
+      const kind = body.kind === 'ollama' ? 'ollama' : 'openai';
+      if (!base) {
+        json(res, 400, { error: 'base url required' });
+        return;
+      }
+      try {
+        new URL(base);
+      } catch {
+        json(res, 400, { error: 'base url is not a url' });
+        return;
+      }
+      const key = String(body.key || label || 'engine')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'engine';
+      cfg.engines[key] = {
+        kind,
+        base,
+        label: label || key,
+        ...(body.apiKey ? { apiKey: String(body.apiKey) } : {}),
+      };
+      saveConfig(cfg);
+      const routes = await resolveRoutes({ force: true });
+      const probe = routes.engines.find((e) => e.key === key);
+      json(res, 200, {
+        ok: true,
+        key,
+        reachable: Boolean(probe?.ok),
+        models: probe?.models?.map((m) => m.id) || [],
+        error: probe?.ok ? null : probe?.error || 'unreachable',
+        engines: routes.engines.map(({ apiKey, ...rest }) => rest),
+      });
+      return;
+    }
+
+    if (route.startsWith('/api/engines/') && req.method === 'DELETE') {
+      const key = route.split('/')[3];
+      if (!cfg.engines[key]) {
+        json(res, 404, { error: 'no such engine' });
+        return;
+      }
+      if (Object.keys(cfg.engines).length <= 1) {
+        json(res, 400, { error: 'keep at least one engine' });
+        return;
+      }
+      delete cfg.engines[key];
+      for (const role of Object.keys(cfg.roles)) {
+        if (cfg.roles[role].engine === key) cfg.roles[role] = { engine: Object.keys(cfg.engines)[0], model: '' };
+      }
+      saveConfig(cfg);
+      const routes = await resolveRoutes({ force: true });
+      json(res, 200, { ok: true, engines: routes.engines.map(({ apiKey, ...rest }) => rest) });
       return;
     }
 

@@ -1,0 +1,16 @@
+{
+  "name": "arachne-gui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local agent room for RCE research: multi-agent surface mapping, sink triage, harness proof, and a chat surface.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "selftest": "node server/selftest.mjs",
+    "mock": "node server/mockengine.mjs 8099"
+  }
+}

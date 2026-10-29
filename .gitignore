@@ -1,0 +1,7 @@
+data/
+config.json
+workspace/pocs/
+workspace/reports/
+workspace/engagements/
+node_modules/
+.DS_Store

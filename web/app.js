@@ -274,8 +274,16 @@ function renderThreads() {
   const activeId = isChat ? state.chatThreadId : state.roomThreadId;
 
   box.innerHTML = '';
+  if (!q) {
+    const fresh = el('button', 'row new');
+    fresh.innerHTML = `
+      <div class="row-avatar"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="row-main"><span class="row-name">${isChat ? 'New chat' : 'New room'}</span></div>`;
+    fresh.onclick = newConversation;
+    box.appendChild(fresh);
+  }
   if (!list.length) {
-    box.innerHTML = `<div class="row-preview" style="padding:12px">${q ? 'nothing matches' : isChat ? 'no chats yet' : 'no rooms yet'}</div>`;
+    if (q) box.insertAdjacentHTML('beforeend', '<div class="row-preview" style="padding:12px">nothing matches</div>');
     return;
   }
 
@@ -709,6 +717,11 @@ async function openThread(id, kind = 'room') {
   setTimeout(() => scrollDown(true), 80);
 }
 
+/** One action, two outcomes: the mode decides what you get. */
+function newConversation() {
+  return state.mode === 'chat' ? newChat() : newRoom();
+}
+
 async function newRoom() {
   const { thread } = await api('/api/threads', {
     method: 'POST',
@@ -1044,8 +1057,6 @@ function wire() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAgentModal();
   });
-  $('#new-room').onclick = newRoom;
-  $('#new-chat').onclick = newChat;
   $('#hunt-run').onclick = runHunt;
   $('#hunt-target').addEventListener('keydown', (e) => { if (e.key === 'Enter') runHunt(); });
 

@@ -65,7 +65,9 @@ Two columns, like a chat app rather than a dashboard:
 - **chat / agents** at the top of the window is the mode switch: `chat` is a
   1:1 conversation with one generalist, `agents` is the rooms where the
   specialists work. They are separate thread namespaces, not a filter
-- the left list shows whichever mode you are in; the search field filters it
+- the left list shows whichever mode you are in, with a **New chat** or
+  **New room** entry at the top — one action, and the mode decides what it makes
+- the search field filters the list
 - **evidence** slides over from the right — coverage, state, findings — and
   closes as soon as you go back to the conversation
 - **settings** (bottom left) holds engagement, agents, skills, routing, scope and

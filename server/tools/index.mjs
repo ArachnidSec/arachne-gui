@@ -77,8 +77,17 @@ export const TOOLS = {
     ...def('scan_surface', 'Inventory a target: languages, LOC, entry points (main, routes, stdin, argv), build system.', {
       path: { type: 'string', description: 'target directory or file, default "."' },
     }),
-    run: (cfg, args) => {
+    run: (cfg, args, ctx) => {
       const surface = scanSurface(cfg, args);
+      if (ctx.ledger) {
+        ctx.ledger.upsertEntity({
+          type: 'target',
+          key: surface.root,
+          attrs: { files: surface.fileCount, loc: surface.loc, languages: surface.languages.map((l) => l.lang) },
+          confidence: 'observed',
+          engagement: ctx.engagementId || null,
+        });
+      }
       const lines = [
         `target: ${surface.root}  (${surface.fileCount} files, ${surface.loc} LOC)`,
         `languages: ${surface.languages.map((l) => `${l.lang}=${l.count}`).join(', ') || 'none'}`,
@@ -97,6 +106,22 @@ export const TOOLS = {
     run: (cfg, args, ctx) => {
       const { hits, scanned, skipped } = scanSinks(cfg, args);
       if (!hits.length) return { ok: true, output: `scanned ${scanned} files, no sink candidates.`, meta: { hits: [] } };
+      // a scan is a fact and a state change, not just output
+      ctx.ledger?.addEntry?.({
+        surface: String(args.path || '.'),
+        action: 'scan_sinks static rules',
+        result: `${hits.length} candidates in ${scanned} files${hits[0] ? `; top ${hits[0].cwe} ${hits[0].file}:${hits[0].line}` : ''}`,
+        confidence: 'observed',
+        engagement: ctx.engagementId || null,
+      });
+      ctx.ledger?.upsertEntity?.({
+        type: 'target',
+        key: String(args.path || '.'),
+        attrs: { candidates: hits.length, files: scanned },
+        confidence: 'observed',
+        engagement: ctx.engagementId || null,
+      });
+
       // candidates belong in the rail, and the id is stable so repeat scans dedupe
       for (const hit of hits.slice(0, 8)) {
         const finding = ctx.store?.addFinding({
@@ -125,14 +150,41 @@ export const TOOLS = {
     },
   },
   http_probe: {
-    ...def('http_probe', 'Send one HTTP request to an in-scope host and return status, headers and body head. Host must be listed in scope.', {
+    ...def('http_probe', 'Send one HTTP request to an in-scope host and return status, headers and body head. Host must be listed in scope. A successful probe records the host and service in engagement state.', {
       url: { type: 'string', description: 'full url, e.g. http://127.0.0.1:8080/login' },
       method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'] },
       headers: { type: 'object', description: 'request headers' },
       body: { type: 'string' },
       session: { type: 'string', description: 'named session; keeps cookies and headers across probes' },
     }, ['url']),
-    run: (cfg, args) => httpProbe(cfg, args),
+    run: async (cfg, args, ctx) => {
+      const result = await httpProbe(cfg, args);
+      if (result.ok && ctx.ledger) {
+        try {
+          const u = new URL(result.meta?.url || args.url);
+          const host = ctx.ledger.upsertEntity({
+            type: 'host',
+            key: u.hostname,
+            attrs: { lastStatus: result.meta?.status, scheme: u.protocol.replace(':', '') },
+            confidence: 'observed',
+            engagement: ctx.engagementId || null,
+          });
+          const svc = ctx.ledger.upsertEntity({
+            type: 'service',
+            key: `${u.hostname}:${u.port || (u.protocol === 'https:' ? 443 : 80)}`,
+            attrs: {
+              status: result.meta?.status,
+              path: u.pathname,
+              server: (result.output.match(/^server: (.+)$/im) || [])[1] || '',
+            },
+            confidence: 'observed',
+            engagement: ctx.engagementId || null,
+          });
+          ctx.ledger.link(host.id, svc.id, 'EXPOSES');
+        } catch { /* state is best-effort, never blocks a probe */ }
+      }
+      return result;
+    },
   },
   tcp_probe: {
     ...def('tcp_probe', 'TCP connect and grab a banner from an in-scope host.', {
@@ -342,6 +394,44 @@ export const TOOLS = {
       return { ok: true, output: lines.join('\n'), meta: { finding: updated, verdict } };
     },
   },
+  entity_upsert: {
+    ...def('entity_upsert', 'Record what you know about a host, service, target, credential or path. Merged by type+key, so calling it twice updates rather than duplicates.', {
+      type: { type: 'string', enum: ['host', 'service', 'target', 'credential', 'path', 'note'] },
+      key: { type: 'string', description: 'stable identifier: hostname, host:port, file path, username@domain' },
+      attrs: { type: 'object', description: 'what you learned: version, status, note, privilege' },
+      confidence: { type: 'string', enum: ['observed', 'inferred'] },
+    }, ['type', 'key']),
+    run: (cfg, args, ctx) => {
+      const entity = ctx.ledger.upsertEntity({
+        type: args.type,
+        key: args.key,
+        attrs: args.attrs || {},
+        confidence: args.confidence || 'observed',
+        engagement: ctx.engagementId || null,
+      });
+      ctx.emit?.({ type: 'entity', entity });
+      return {
+        ok: true,
+        output: `state ${entity.id} [${entity.type}] ${entity.key} — ${Object.entries(entity.attrs).map(([k, v]) => `${k}=${v}`).join(' ') || '(no attrs)'}`,
+        meta: { entity },
+      };
+    },
+  },
+  entity_list: {
+    ...def('entity_list', 'Read engagement state: known hosts, services, targets.', {
+      type: { type: 'string', enum: ['host', 'service', 'target', 'credential', 'path', 'note'] },
+    }),
+    run: (cfg, args, ctx) => {
+      const groups = ctx.ledger.entitiesByType();
+      const types = args.type ? [args.type] : Object.keys(groups);
+      if (!types.length) return { ok: true, output: 'state is empty' };
+      return {
+        ok: true,
+        output: types.map((t) => `${t}:\n${(groups[t] || []).slice(0, 20).map((e) => `  ${e.key} ${JSON.stringify(e.attrs)} [${e.confidence}]`).join('\n') || '  (none)'}`).join('\n'),
+      };
+    },
+  },
+
 };
 
 /** Tool defs a model sees, filtered by the agent's allowlist and the policy. */

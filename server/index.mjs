@@ -360,6 +360,9 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const result = await executeTool(cfg, body.name, body.args || {}, {
         store,
+        ledger,
+        engagements,
+        engagementId: engagements.active()?.id || null,
         emit: () => {},
         resolve: () => cfg.workspace,
       });
@@ -547,7 +550,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (route === '/api/ledger' && req.method === 'GET') {
-      json(res, 200, { entries: ledger.entries.slice(0, 200), intents: ledger.intents, summary: ledger.summary() });
+      json(res, 200, {
+        entries: ledger.entries.slice(0, 200),
+        intents: ledger.intents,
+        entities: ledger.entities.slice(0, 200),
+        summary: ledger.summary(),
+      });
       return;
     }
 

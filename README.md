@@ -58,6 +58,16 @@ question. The server enforces it: sending a chat message with a room's thread id
 creates a fresh chat thread instead of mixing the two. Nothing you ask Wren can
 leak into a hunt, and nothing a hunt learns shows up in your chat.
 
+## Interface
+
+- the sidebar switcher under the title moves between **agents** and **chat**
+- the rail has two tabs: **evidence** (coverage, state, findings) and **setup**
+  (engagement, skills, routing, scope, console)
+- click a finding to expand its evidence; click a code block to copy it
+- hunt is an action in the header, not a place you sit
+
+![setup](docs/setup.png)
+
 ## The room
 
 | | agent | role | tools |
@@ -118,6 +128,23 @@ recorded whether or not a model remembers to be tidy.
 
 Intents are the unit of direction: `intent_write` opens one, `intent_status`
 closes it. Three to five per hunt, ranked by expected yield.
+
+## State
+
+A fact log answers "what did we try". State answers "what do we know about that
+host". Alongside the ledger there are typed records — `target`, `host`,
+`service`, `credential`, `path` — merged by `(type, key)`:
+
+```
+probe http://10.0.0.5:8080  →  host 10.0.0.5        EXPOSES → service 10.0.0.5:8080
+                               service 10.0.0.5:8080  status=200, server=…
+scan fixtures/vuln          →  target fixtures/vuln   candidates=5, files=1
+```
+
+Tools populate it as a side effect so it cannot drift from what actually ran:
+`http_probe` records the host and service, `scan_surface` and `scan_sinks` record
+the target. Agents add what they infer with `entity_upsert`, and read it with
+`entity_list`. It shows up in the coverage panel and in `arachne state`.
 
 ## The verification gate
 

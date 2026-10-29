@@ -184,11 +184,12 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-async function* sse(path, body) {
+async function* sse(path, body, signal) {
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const reader = res.body.getReader();
@@ -243,6 +244,7 @@ async function boot() {
     await loadLedger();
     const deep = location.hash.match(/^#agent\/([\w-]+)$/);
     if (deep) openAgentModal(deep[1]);
+    if (location.hash === '#setup') $$('#rail-tabs button').find((b) => b.dataset.tab === 'setup')?.click();
 
     if (state.roomThreads.length) {
       await openThread(state.roomThreads[0].id, 'room');
@@ -366,7 +368,7 @@ function renderSkills() {
       try { localStorage.setItem('arachne.skills', JSON.stringify([...state.selectedSkills])); } catch {}
       renderSkills();
     };
-    const text = el('span', '', `${escapeHtml(skill.name)}<span class="sk-d">${escapeHtml(skill.description || '')}</span>`);
+    const text = el('span', '', `<span class="sk-n">${escapeHtml(skill.name)}</span><span class="sk-d">${escapeHtml(skill.description || '')}</span>`);
     row.append(cb, text);
     row.title = `agents: ${(skill.agents || []).join(', ') || 'all'}`;
     box.appendChild(row);
@@ -393,7 +395,7 @@ function renderEngagement() {
 
 async function loadLedger() {
   try {
-    const { entries, intents, summary } = await api('/api/ledger');
+    const { entries, intents, summary, entities } = await api('/api/ledger');
     state.ledger = summary;
     state.intents = intents || [];
     const s = summary;
@@ -404,7 +406,25 @@ async function loadLedger() {
       <div class="route-row"><span class="role">intents</span><span class="val">${s.openIntents} open</span></div>`;
     $('#intents').innerHTML = (intents || []).filter((i) => i.status !== 'done').slice(0, 6)
       .map((i) => `<div class="intent-row ${i.status}">${escapeHtml(i.title)}</div>`).join('');
+    renderEntities(entities || []);
   } catch { /* server older than ui */ }
+}
+
+function renderEntities(entities) {
+  const box = $('#entities');
+  if (!box) return;
+  if (!entities.length) {
+    box.innerHTML = '';
+    return;
+  }
+  const groups = {};
+  for (const e of entities) (groups[e.type] = groups[e.type] || []).push(e);
+  const order = ['target', 'host', 'service', 'credential', 'path', 'note'];
+  box.innerHTML = order.filter((t) => groups[t]?.length).map((t) => `
+    <div class="ent-group">
+      <span class="t">${t}</span>
+      <span class="k">${groups[t].slice(0, 6).map((e) => `<span class="ent" title="${escapeHtml(JSON.stringify(e.attrs || {}))}">${escapeHtml(e.key)}</span>`).join('')}</span>
+    </div>`).join('');
 }
 
 function renderFindings() {
@@ -424,8 +444,9 @@ function renderFindings() {
         <span class="chip ${f.status}">${escapeHtml(f.status || 'candidate')}</span>
         ${f.file ? `<span title="${escapeHtml(f.file)}">${escapeHtml(String(f.file).split('/').slice(-2).join('/'))}:${f.line || 0}</span>` : ''}
         ${f.reach != null ? `<span>reach ${f.reach}</span>` : ''}
-      </div>`;
-    card.title = f.evidence || '';
+      </div>
+      ${f.evidence ? `<div class="evidence"><pre>${escapeHtml(String(f.evidence).slice(0, 1500))}</pre></div>` : ''}`;
+    if (f.evidence) card.onclick = () => card.classList.toggle('open');
     box.appendChild(card);
   }
 }
@@ -455,8 +476,12 @@ function renderEmpty(kind = 'room') {
   $('#transcript').innerHTML = `<div class="transcript-inner"><div class="empty-state">
     <div class="big">a quiet room</div>
     <div class="sub">Point the room at something. Mira maps the surface, Ivo traces the dataflow,
-    Rook builds the harness, Sable calls the crash, Juniper writes it up.<br><br>
-    Try: <em>“map ./workspace/fixtures/vuln and tell me what is reachable”</em></div>
+    Rook builds the harness, Sable calls the crash, Juniper writes it up.</div>
+    <div class="suggest">
+      <button data-suggest="map fixtures/vuln and tell me what is reachable">map a target</button>
+      <button data-suggest="read store_record and tell me whether the strcpy is reachable">trace a sink</button>
+      <button data-suggest="build a harness for the top candidate and run it under ASan">build a harness</button>
+    </div>
   </div></div>`;
   $('#thread-title').textContent = 'new room';
   $('#thread-meta').textContent = 'room · not started';
@@ -468,6 +493,10 @@ function showChatEmpty() {
     <div class="sub">A plain chat with one generalist. No tools, no agents, no room protocol —
     for “what does this parse do”, “explain this stack trace”, “is this worth a second look”.<br><br>
     Chats live in their own place. Nothing said here is handed to the specialists.</div>
+    <div class="suggest">
+      <button data-suggest="what does CWE-121 mean, in one paragraph?">what is CWE-121</button>
+      <button data-suggest="explain the difference between a crash and demonstrated control">crash vs control</button>
+    </div>
   </div></div>`;
   $('#thread-title').textContent = 'chat';
   $('#thread-meta').textContent = 'Wren · generalist · no tools';
@@ -685,6 +714,7 @@ function setBusy(busy) {
   $('#send').disabled = busy;
   $('#hunt-run').disabled = busy;
   $('#input').disabled = busy;
+  $('#stop').classList.toggle('hidden', !busy);
   $('#input').placeholder = busy
     ? (state.mode === 'chat' ? 'thinking…' : 'the room is talking…')
     : (state.mode === 'chat' ? 'ask a question…' : 'ask the room…');
@@ -710,8 +740,10 @@ async function send() {
     skills: [...state.selectedSkills],
   };
 
+  const controller = new AbortController();
+  state.abort = controller;
   try {
-    for await (const ev of sse('/api/send', body)) {
+    for await (const ev of sse('/api/send', body, controller.signal)) {
       switch (ev.type) {
         case 'thread':
           if (ev.kind === 'chat') state.chatThreadId = ev.threadId;
@@ -759,8 +791,10 @@ async function send() {
       }
     }
   } catch (err) {
-    addError(err.message);
+    if (err.name === 'AbortError') toast('stopped');
+    else addError(err.message);
   } finally {
+    state.abort = null;
     setBusy(false);
     await refreshThreads();
     loadLedger();
@@ -831,8 +865,10 @@ async function runHunt() {
   setBusy(true);
   huntTimeline(target);
 
+  const controller = new AbortController();
+  state.abort = controller;
   try {
-    for await (const ev of sse('/api/hunt', { target })) {
+    for await (const ev of sse('/api/hunt', { target }, controller.signal)) {
       switch (ev.type) {
         case 'phase':
           huntPhase(ev);
@@ -876,8 +912,9 @@ async function runHunt() {
       }
     }
   } catch (err) {
-    addError(err.message);
+    if (err.name !== 'AbortError') addError(err.message);
   } finally {
+    state.abort = null;
     setBusy(false);
   }
 }
@@ -1026,6 +1063,34 @@ function wire() {
       toast(`engine failed: ${err.message}`);
     }
   };
+
+  $('#stop').onclick = () => state.abort?.abort();
+
+  $$('#rail-tabs button').forEach((b) => {
+    b.onclick = () => {
+      $$('#rail-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+      $('#tab-evidence').classList.toggle('hidden', b.dataset.tab !== 'evidence');
+      $('#tab-setup').classList.toggle('hidden', b.dataset.tab !== 'setup');
+    };
+  });
+
+  // suggestions fill the composer; a click on a code block copies it
+  $('#transcript').addEventListener('click', async (e) => {
+    const suggestion = e.target.closest('[data-suggest]');
+    if (suggestion) {
+      $('#input').value = suggestion.dataset.suggest;
+      autogrow();
+      $('#input').focus();
+      return;
+    }
+    const pre = e.target.closest('pre');
+    if (pre) {
+      try {
+        await navigator.clipboard.writeText(pre.innerText);
+        toast('copied');
+      } catch { toast('copy blocked by the browser'); }
+    }
+  });
 
   $('#engine-toggle').onclick = async () => {
     $('#engine-label').textContent = 'probing…';

@@ -22,6 +22,7 @@ export class Ledger {
     this.path = path.join(dataDir, 'ledger.json');
     this.entries = [];
     this.intents = [];
+    this.entities = [];
     this.load();
   }
 
@@ -30,9 +31,11 @@ export class Ledger {
       const raw = JSON.parse(fs.readFileSync(this.path, 'utf8'));
       this.entries = raw.entries || [];
       this.intents = raw.intents || [];
+      this.entities = raw.entities || [];
     } catch {
       this.entries = [];
       this.intents = [];
+      this.entities = [];
     }
   }
 
@@ -40,7 +43,7 @@ export class Ledger {
     try {
       fs.mkdirSync(path.dirname(this.path), { recursive: true });
       const tmp = `${this.path}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ entries: this.entries, intents: this.intents }, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify({ entries: this.entries, intents: this.intents, entities: this.entities }, null, 2));
       fs.renameSync(tmp, this.path);
     } catch { /* a full disk should not take the turn down */ }
   }
@@ -63,6 +66,54 @@ export class Ledger {
     this.entries = this.entries.slice(0, 600);
     this.flush();
     return entry;
+  }
+
+  /**
+   * Structured state: hosts, services, targets, credentials — one record per
+   * (type, key), merged on repeat. A flat fact log answers "what did we try";
+   * this answers "what do we know about that host".
+   */
+  upsertEntity({ type, key, attrs = {}, confidence = 'observed', engagement = null }) {
+    if (!type || !key) throw new Error('type and key required');
+    const now = Date.now();
+    const existing = this.entities.find((e) => e.type === type && e.key.toLowerCase() === String(key).toLowerCase());
+    if (existing) {
+      Object.assign(existing.attrs, attrs);
+      existing.lastSeen = now;
+      if (confidence === 'observed') existing.confidence = 'observed';
+      this.flush();
+      return existing;
+    }
+    const entity = {
+      id: `ent_${uid(6)}`,
+      type,
+      key: String(key),
+      attrs: { ...attrs },
+      confidence,
+      links: [],
+      firstSeen: now,
+      lastSeen: now,
+      engagement,
+    };
+    this.entities.unshift(entity);
+    this.entities = this.entities.slice(0, 400);
+    this.flush();
+    return entity;
+  }
+
+  link(fromId, toId, rel) {
+    const from = this.entities.find((e) => e.id === fromId || e.key === fromId);
+    if (!from) return null;
+    from.links = from.links || [];
+    if (!from.links.some((l) => l.to === toId && l.rel === rel)) from.links.push({ to: toId, rel });
+    this.flush();
+    return from;
+  }
+
+  entitiesByType() {
+    const grouped = {};
+    for (const e of this.entities) (grouped[e.type] = grouped[e.type] || []).push(e);
+    return grouped;
   }
 
   /** Has this surface already been tested to the given confidence? */
@@ -115,6 +166,7 @@ export class Ledger {
       return acc;
     }, {});
     return {
+      entities: this.entities.length,
       tested: this.entries.length,
       observed,
       inferred: this.entries.length - observed,
@@ -139,6 +191,7 @@ export class Ledger {
   clear() {
     this.entries = [];
     this.intents = [];
+    this.entities = [];
     this.flush();
   }
 }

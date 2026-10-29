@@ -42,32 +42,36 @@ node server/mockengine.mjs 8099  # a fake OpenAI-compatible engine, for demos
 The terminal client lives in the sibling `cli/` folder and talks to this server
 over the same HTTP API the browser uses.
 
-## Rooms and chats
+## Two spaces: threads and agents
 
-Two separate things, with separate thread lists and separate storage:
+The window has two independent spaces, switched at the top.
 
-| | rooms | chats |
+| | **threads** (chat) | **agents** |
 |---|---|---|
-| who answers | any member, or one specialist | Wren, the generalist |
-| tools | yes, per agent toolbelt | none |
-| protocol | fan-out, tapback, handoff | plain question and answer |
-| threads | `kind: "room"` | `kind: "chat"` |
+| what it is | a conversation with one assistant | rooms where the specialists work |
+| who answers | the chat model | one agent or the whole room |
+| tools | none | per-agent toolbelts |
+| grouping | **projects** — a folder of threads | room members |
+| extra actions | none | hunt, evidence, agent picker |
 
-A chat thread is never handed to the agents and a room is never reused for a
-question. The server enforces it: sending a chat message with a room's thread id
-creates a fresh chat thread instead of mixing the two. Nothing you ask Wren can
-leak into a hunt, and nothing a hunt learns shows up in your chat.
+A thread is never handed to the agents and a room is never reused for a question.
+The server enforces it: sending a chat message with a room's thread id creates a
+fresh thread instead of mixing the two. Nothing you ask in a thread reaches a
+hunt, and nothing a hunt learns shows up in your threads.
+
+Threads can be filed under a project: **New project** in the sidebar creates one,
+and clicking a project starts a thread inside it.
 
 ## Interface
 
 Two columns, like a chat app rather than a dashboard:
 
-- **chat / agents** at the top of the window is the mode switch: `chat` is a
-  1:1 conversation with one generalist, `agents` is the rooms where the
-  specialists work. They are separate thread namespaces, not a filter
-- the left list shows whichever mode you are in, with a **New chat** or
-  **New room** entry at the top — one action, and the mode decides what it makes
-- the search field filters the list
+- **chat / agents** at the top of the window switches spaces. They are separate
+  namespaces, not a filter: thread lists, composer and actions all change
+- the left list shows whichever space you are in, with a **New thread** or
+  **New room** entry at the top — one action, and the space decides what it makes
+- in chat, threads can be grouped under **projects**; the search field filters
+  whatever list is showing
 - **evidence** slides over from the right — coverage, state, findings — and
   closes as soon as you go back to the conversation
 - **settings** (bottom left) holds engagement, agents, skills, routing, scope and

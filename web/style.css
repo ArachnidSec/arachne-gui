@@ -92,6 +92,31 @@ button { cursor: pointer; border: none; background: none; padding: 0; }
 .stack .avatar:nth-child(3) { bottom: 0; left: 6px; }
 
 .row-main { min-width: 0; flex: 1; }
+.threads .side-label {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); padding: 12px 10px 6px;
+}
+.row-avatar.glyph {
+  display: grid; place-items: center; border-radius: 50%;
+  background: #2a2a2a; color: var(--text-2);
+}
+.empty .empty-orb.mark { display: grid; place-items: center; color: var(--cream); }
+.row.proj .row-avatar { display: grid; place-items: center; border-radius: 10px; background: #2a2a2a; color: var(--text-2); }
+.row.proj:hover .row-avatar { background: #333; color: var(--text); }
+.row.subtle .row-avatar {
+  display: grid; place-items: center; border-radius: 10px;
+  background: transparent; border: 1px dashed #3a3a3a; color: var(--faint);
+}
+.row.subtle:hover .row-avatar { border-color: #555; color: var(--text-2); }
+.row.subtle .row-name { color: var(--faint); font-weight: 500; }
+.row.subtle:hover .row-name { color: var(--text-2); }
+.proj-input .row-avatar { display: grid; place-items: center; border-radius: 10px; background: #2a2a2a; color: var(--faint); }
+.proj-input input {
+  width: 100%; background: none; border: none; outline: none;
+  font-size: 14px; color: var(--text); padding: 2px 0;
+}
+.proj-input input::placeholder { color: var(--faint); }
 .row.new { background: transparent; }
 .row.new:hover { background: var(--hover); }
 .row.new .row-avatar {

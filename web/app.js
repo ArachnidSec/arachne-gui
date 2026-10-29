@@ -8,6 +8,7 @@ const state = {
   tools: [],
   roomThreads: [],
   chatThreads: [],
+  projects: [],
   roomThreadId: null,
   chatThreadId: null,
   thread: null,
@@ -85,6 +86,15 @@ function md(text) {
 /* ------------------------------------------------------------------ avatars */
 
 let blobSeq = 0;
+
+const CHAT_GLYPH = `<svg viewBox="0 0 16 16" width="16" height="16"><path d="M3 4.2A1.7 1.7 0 0 1 4.7 2.5h6.6A1.7 1.7 0 0 1 13 4.2v4.6a1.7 1.7 0 0 1-1.7 1.7H7.2L4.3 12.6V10.4h-.6A1.7 1.7 0 0 1 3 8.7V4.2z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>`;
+
+/** The product mark: eight rounded petals, used where a chat has no agent face. */
+function brandMark() {
+  const petals = Array.from({ length: 8 }, (_, i) =>
+    `<rect x="17" y="1.5" width="6" height="15" rx="3" fill="currentColor" transform="rotate(${i * 45} 20 20)"/>`).join('');
+  return `<svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">${petals}</svg>`;
+}
 
 /**
  * The face an agent wears: a body path painted in paper cream, then the agent's
@@ -202,6 +212,7 @@ async function boot() {
     state.findings = await api('/api/findings').then((r) => r.findings).catch(() => []);
     state.roomThreads = threads.threads.filter((t) => (t.kind || 'room') !== 'chat');
     state.chatThreads = threads.threads.filter((t) => t.kind === 'chat');
+    state.projects = await api('/api/projects').then((r) => r.projects).catch(() => []);
     state.skills = health.skills || [];
     try {
       const saved = JSON.parse(localStorage.getItem('arachne.skills') || '[]');
@@ -264,6 +275,8 @@ const relTime = (ts) => {
   return dt.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
+const modelName = () => state.health?.roles?.chat?.model || 'no model';
+
 function renderThreads() {
   const box = $('#threads');
   if (!box) return;
@@ -274,14 +287,38 @@ function renderThreads() {
   const activeId = isChat ? state.chatThreadId : state.roomThreadId;
 
   box.innerHTML = '';
+
   if (!q) {
     const fresh = el('button', 'row new');
     fresh.innerHTML = `
       <div class="row-avatar"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
-      <div class="row-main"><span class="row-name">${isChat ? 'New chat' : 'New room'}</span></div>`;
+      <div class="row-main"><span class="row-name">${isChat ? 'New thread' : 'New room'}</span></div>`;
     fresh.onclick = newConversation;
     box.appendChild(fresh);
   }
+
+  if (isChat && !q) {
+    if (state.projects.length) {
+      box.insertAdjacentHTML('beforeend', '<div class="side-label"><span>projects</span></div>');
+      for (const p of state.projects) {
+        const row = el('button', 'row proj');
+        row.innerHTML = `
+          <div class="row-avatar"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg></div>
+          <div class="row-main"><div class="row-top"><span class="row-name">${escapeHtml(p.name)}</span><span class="row-time">${p.threads || ''}</span></div></div>`;
+        row.title = `new thread in ${p.name}`;
+        row.onclick = () => newChat(p.id);
+        box.appendChild(row);
+      }
+    }
+    const add = el('button', 'row subtle');
+    add.innerHTML = `
+      <div class="row-avatar"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+      <div class="row-main"><span class="row-name">New project</span></div>`;
+    add.onclick = startNewProject;
+    box.appendChild(add);
+    box.insertAdjacentHTML('beforeend', '<div class="side-label"><span>threads</span></div>');
+  }
+
   if (!list.length) {
     if (q) box.insertAdjacentHTML('beforeend', '<div class="row-preview" style="padding:12px">nothing matches</div>');
     return;
@@ -290,7 +327,7 @@ function renderThreads() {
   for (const t of list) {
     const row = el('button', `row${t.id === activeId ? ' on' : ''}`);
     const avatars = (t.kind === 'chat' || isChat)
-      ? avatarSvg(agentOf(t.agentId || 'chat'))
+      ? `<div class="row-avatar glyph">${CHAT_GLYPH}</div>`
       : `<div class="stack">${(t.members || []).slice(0, 3).map((id) => avatarSvg(agentOf(id))).join('')}</div>`;
     row.innerHTML = `
       <div class="row-avatar">${avatars}</div>
@@ -301,6 +338,32 @@ function renderThreads() {
     row.onclick = () => openThread(t.id, t.kind || 'room');
     box.appendChild(row);
   }
+}
+
+function startNewProject() {
+  const box = $('#threads');
+  if (box.querySelector('.proj-input')) return;
+  const row = el('div', 'row proj-input');
+  row.innerHTML = `
+    <div class="row-avatar"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+    <div class="row-main"><input placeholder="Project name" /></div>`;
+  box.prepend(row);
+  const input = row.querySelector('input');
+  input.focus();
+  input.onkeydown = async (e) => {
+    if (e.key === 'Escape') { row.remove(); return; }
+    if (e.key !== 'Enter') return;
+    const name = input.value.trim();
+    if (!name) { row.remove(); return; }
+    try {
+      const { project } = await api('/api/projects', { method: 'POST', body: { name } });
+      state.projects.unshift({ ...project, threads: 0 });
+      renderThreads();
+      toast(`project ${project.name}`);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
 }
 
 function renderHealth() {
@@ -500,7 +563,7 @@ function loadScope(policy) {
 
 function updateComposerHint() {
   const hint = $('#composer-hint');
-  if (state.mode === 'chat') hint.textContent = 'Wren · one generalist · no tools · separate from your rooms';
+  if (state.mode === 'chat') hint.textContent = 'chat · no tools · threads and projects only';
   else if (state.mode === 'hunt') hint.textContent = 'deterministic surface → scan → agent trace → harness → report';
   else if ($('#agent-select').value) hint.textContent = 'single specialist answers';
   else hint.textContent = 'room protocol: fan-out · tapback · handoff';
@@ -526,37 +589,31 @@ function renderEmpty(kind = 'room') {
   $('#thread-meta').textContent = 'room · not started';
 }
 
-function showChatEmpty() {
-  $('#transcript').innerHTML = `<div class="transcript-inner"><div class="empty">
-    <div class="empty-orb">${avatarSvg(agentOf('chat'))}</div>
-    <div class="big">ask Wren anything</div>
-    <div class="sub">A plain chat with one generalist. No tools, no agents, no room protocol —
-    for “what does this parse do”, “explain this stack trace”, “is this worth a second look”.<br><br>
-    Chats live in their own place. Nothing said here is handed to the specialists.</div>
-    <div class="suggest">
-      <button data-suggest="what does CWE-121 mean, in one paragraph?">what is CWE-121</button>
-      <button data-suggest="explain the difference between a crash and demonstrated control">crash vs control</button>
-    </div>
-  </div></div>`;
-  $('#peer-avatar').innerHTML = avatarSvg(agentOf('chat'));
-  $('#thread-title').textContent = 'chat';
-  $('#thread-meta').textContent = 'Wren · generalist · no tools';
-}
-
 function clearTranscript() {
   $('#transcript').innerHTML = '';
-  const inner = el('div', 'transcript-inner');
-  inner.id = 'transcript-inner';
-  $('#transcript').appendChild(inner);
+  const wrap = el('div', 'transcript-inner');
+  wrap.id = 'transcript-inner';
+  $('#transcript').appendChild(wrap);
   state.live.clear();
 }
 
-const inner = () => $('#transcript-inner');
-
-function addUserMessage(text) {
-  if (!inner()) clearTranscript();
-  inner().appendChild(el('div', 'msg user', `<div class="bubble">${escapeHtml(text)}</div>`));
-  scrollDown(true);
+function showChatEmpty() {
+  $('#transcript').innerHTML = `<div class="transcript-inner"><div class="empty">
+    <div class="empty-orb mark">${brandMark()}</div>
+    <div class="big">How can I help you today?</div>
+    <div class="sub">Ask anything. Threads live here; projects group them. Nothing in this
+    space touches the agent rooms.</div>
+    <div class="suggest">
+      <button data-suggest="what does CWE-121 mean, in one paragraph?">what is CWE-121</button>
+      <button data-suggest="explain the difference between a crash and demonstrated control">crash vs control</button>
+      <button data-suggest="summarise this stack trace and tell me what to look at first">read a stack trace</button>
+    </div>
+  </div></div>`;
+  $('#peer-avatar').style.display = 'grid';
+  $('#peer-avatar').style.placeItems = 'center';
+  $('#peer-avatar').innerHTML = brandMark();
+  $('#thread-title').textContent = 'New thread';
+  $('#thread-meta').textContent = modelName();
 }
 
 function addAgentMessage(m) {
@@ -700,11 +757,18 @@ async function openThread(id, kind = 'room') {
   state.mode = k === 'chat' ? 'chat' : state.mode === 'hunt' ? 'hunt' : 'room';
   syncModeUI();
   $('#thread-title').textContent = thread.title;
-  $('#thread-meta').textContent = k === 'chat'
-    ? `chat · ${thread.title === 'new chat' ? 'Wren' : 'Wren · generalist'}`
-    : `room · ${thread.members.map((m) => agentOf(m).name).join(' · ')}`;
-  const peer = k === 'chat' ? agentOf('chat') : agentOf((thread.members || ['scout'])[0]);
-  $('#peer-avatar').innerHTML = avatarSvg(peer);
+  const project = state.projects.find((p) => p.id === thread.projectId);
+  if (k === 'chat') {
+    $('#peer-avatar').style.display = 'grid';
+    $('#peer-avatar').style.placeItems = 'center';
+    $('#peer-avatar').innerHTML = brandMark();
+    $('#thread-title').textContent = thread.title === 'new chat' ? 'New thread' : thread.title;
+    $('#thread-meta').textContent = [project ? project.name : 'thread', modelName()].filter(Boolean).join(' · ');
+  } else {
+    $('#peer-avatar').style.display = '';
+    $('#thread-meta').textContent = `room · ${thread.members.map((m) => agentOf(m).name).join(' · ')}`;
+    $('#peer-avatar').innerHTML = avatarSvg(agentOf((thread.members || ['scout'])[0]));
+  }
   clearTranscript();
   for (const m of thread.messages) {
     if (m.role === 'user') addUserMessage(m.text);
@@ -739,9 +803,9 @@ async function newRoom() {
   $('#input').focus();
 }
 
-async function newChat() {
-  const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'chat' } });
-  state.chatThreads.unshift({ id: thread.id, title: thread.title, preview: '', kind: 'chat', members: ['chat'] });
+async function newChat(projectId = null) {
+  const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'chat', projectId } });
+  state.chatThreads.unshift({ id: thread.id, title: thread.title, preview: '', kind: 'chat', projectId: thread.projectId || null, members: ['chat'] });
   state.chatThreadId = thread.id;
   state.thread = thread;
   state.mode = 'chat';
@@ -853,6 +917,7 @@ async function refreshThreads() {
     const { threads } = await api('/api/threads');
     state.roomThreads = threads.filter((t) => (t.kind || 'room') !== 'chat');
     state.chatThreads = threads.filter((t) => t.kind === 'chat');
+    state.projects = await api('/api/projects').then((r) => r.projects).catch(() => state.projects);
     renderThreads();
     const activeId = state.mode === 'chat' ? state.chatThreadId : state.roomThreadId;
     const current = threads.find((t) => t.id === activeId);
@@ -1021,7 +1086,7 @@ function syncModeUI() {
   $('#hunt-btn').style.display = state.mode === 'chat' ? 'none' : '';
   $('#huntbar').classList.toggle('hidden', state.mode !== 'hunt');
   $('#composer').style.display = state.mode === 'hunt' ? 'none' : 'flex';
-  $('#input').placeholder = state.mode === 'chat' ? 'Message Wren' : 'Message the room';
+  $('#input').placeholder = state.mode === 'chat' ? 'Ask anything…' : 'Message the room';
   updateComposerHint();
   renderThreads();
 }

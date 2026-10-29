@@ -13,6 +13,7 @@ export class Store {
     this.threadsPath = path.join(dataDir, 'threads.json');
     this.findingsPath = path.join(dataDir, 'findings.json');
     this.threads = new Map();
+    this.projects = [];
     this.findings = [];
     this.load();
   }
@@ -21,6 +22,7 @@ export class Store {
     try {
       const raw = JSON.parse(fs.readFileSync(this.threadsPath, 'utf8'));
       for (const t of raw.threads || []) this.threads.set(t.id, t);
+      this.projects = raw.projects || [];
     } catch { /* fresh */ }
     try {
       this.findings = JSON.parse(fs.readFileSync(this.findingsPath, 'utf8'));
@@ -37,15 +39,40 @@ export class Store {
       fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
       fs.renameSync(tmp, file);
     };
-    writeAtomic(this.threadsPath, { threads: [...this.threads.values()] });
+    writeAtomic(this.threadsPath, { threads: [...this.threads.values()], projects: this.projects });
     writeAtomic(this.findingsPath, this.findings);
   }
 
-  createThread({ title, members, kind = 'room' } = {}) {
+  createProject({ name } = {}) {
+    const project = {
+      id: `prj_${uid()}`,
+      name: String(name || 'Project').slice(0, 60),
+      createdAt: Date.now(),
+    };
+    this.projects.unshift(project);
+    this.flush();
+    return project;
+  }
+
+  listProjects() {
+    return this.projects.map((p) => ({
+      ...p,
+      threads: [...this.threads.values()].filter((t) => t.projectId === p.id).length,
+    }));
+  }
+
+  deleteProject(id) {
+    this.projects = this.projects.filter((p) => p.id !== id);
+    for (const t of this.threads.values()) if (t.projectId === id) delete t.projectId;
+    this.flush();
+  }
+
+  createThread({ title, members, kind = 'room', projectId = null } = {}) {
     const thread = {
       id: uid(),
       title: title || 'untitled',
       kind,
+      projectId: projectId || null,
       members: members || ['scout', 'static', 'hunter', 'triage', 'scribe'],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -68,6 +95,7 @@ export class Store {
         id: t.id,
         title: t.title,
         kind: t.kind || 'room',
+        projectId: t.projectId || null,
         members: t.members,
         updatedAt: t.updatedAt,
         messageCount: t.messages.length,

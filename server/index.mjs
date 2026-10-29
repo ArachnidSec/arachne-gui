@@ -306,12 +306,31 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (route === '/api/projects' && req.method === 'GET') {
+      json(res, 200, { projects: store.listProjects() });
+      return;
+    }
+
+    if (route === '/api/projects' && req.method === 'POST') {
+      const body = await readBody(req);
+      const project = store.createProject({ name: body.name });
+      json(res, 200, { project });
+      return;
+    }
+
+    if (route.startsWith('/api/projects/') && req.method === 'DELETE') {
+      store.deleteProject(route.split('/')[3]);
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (route === '/api/threads' && req.method === 'POST') {
       const body = await readBody(req);
       const kind = body.kind === 'chat' ? 'chat' : 'room';
       const thread = store.createThread({
         title: body.title || (kind === 'chat' ? 'new chat' : 'new room'),
         kind,
+        projectId: body.projectId || null,
         members: kind === 'chat' ? ['chat'] : (body.members?.length ? body.members : ['scout', 'static', 'hunter']),
       });
       json(res, 200, { thread });

@@ -1,3 +1,5 @@
+import { BLOUB } from './bloub.js';
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -82,57 +84,31 @@ function md(text) {
 
 /* ------------------------------------------------------------------ avatars */
 
-function hash(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i += 1) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
+let blobSeq = 0;
 
-function rng(seed) {
-  let s = seed;
-  return () => {
-    s |= 0;
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Blobby agent face, deterministic per agent. */
+/**
+ * The face an agent wears: a body path painted in paper cream, then the agent's
+ * colour painted over it through a mask with the eyes cut out — so the eyes read
+ * as paper, not paint.
+ */
 function avatarSvg(agent, size = 'md') {
-  const r = rng(hash(agent.id));
-  const n = 9;
-  const pts = [];
-  for (let i = 0; i < n; i += 1) {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    let rad = 0.67 + r() * 0.29;
-    if (agent.shape === 'tall') rad *= 0.94;
-    if (agent.shape === 'wide') rad *= 1.02;
-    pts.push([32 + Math.cos(a) * 27 * rad, 32 + Math.sin(a) * 27 * rad]);
-  }
-  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  let d = `M ${mid(pts[0], pts[1]).join(' ')}`;
-  for (let i = 1; i <= n; i += 1) {
-    const cur = pts[i % n];
-    const next = pts[(i + 1) % n];
-    d += ` Q ${cur.join(' ')} ${mid(cur, next).join(' ')}`;
-  }
-  const gap = agent.shape === 'wide' ? 8.5 : 7;
-  const ey = agent.shape === 'tall' ? 29 : 31;
-  const er = agent.shape === 'wide' ? 2.1 : 2.4;
-  return `<svg class="avatar ${size}" viewBox="0 0 64 64" aria-hidden="true">
-    <path d="${d}" fill="${agent.color}" opacity="0.9"/>
-    <circle cx="${32 - gap}" cy="${ey}" r="${er}" fill="#14100d"/>
-    <circle cx="${32 + gap}" cy="${ey}" r="${er}" fill="#14100d"/>
-    <path d="M ${32 - 3.5} ${ey + 6} Q 32 ${ey + 8.5} ${32 + 3.5} ${ey + 6}" stroke="#14100d" stroke-width="1.4" fill="none" stroke-linecap="round" opacity=".55"/>
+  const key = BLOUB[agent.shape] ? agent.shape : 'cercle';
+  const frame = BLOUB[key];
+  const id = `blb${(blobSeq += 1)}`;
+  const vb = frame.viewBox;
+  const eyes = frame.eyes
+    .map((e) => `<path d="${e.d}" transform="${e.m}" opacity="${e.a}" fill="#000"/>`)
+    .join('');
+  return `<svg class="avatar ${size}" viewBox="${-vb} ${-vb} ${vb * 2} ${vb * 2}" aria-hidden="true">
+    <defs><mask id="${id}" maskUnits="userSpaceOnUse" x="${-vb}" y="${-vb}" width="${vb * 2}" height="${vb * 2}">
+      <path d="${frame.body}" fill="#fff"/>${eyes}
+    </mask></defs>
+    <path d="${frame.body}" fill="#f6f3e9"/>
+    <g mask="url(#${id})"><rect x="${-vb}" y="${-vb}" width="${vb * 2}" height="${vb * 2}" fill="${agent.color || '#9a9aa2'}"/></g>
   </svg>`;
 }
 
-const agentOf = (id) => state.agents.find((a) => a.id === id) || { id: id || 'x', name: id || 'agent', role: '', color: '#8b8f9a', shape: 'round' };
+const agentOf = (id) => state.agents.find((a) => a.id === id) || { id: id || 'x', name: id || 'agent', role: '', color: '#9a9aa2', shape: 'cercle' };
 
 /* ------------------------------------------------------------------ misc ui */
 
@@ -1020,8 +996,16 @@ function closeAgentModal() {
 
 function syncModeUI() {
   const view = state.mode === 'chat' ? 'chat' : 'room';
-  $$('#view-switch button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+  $$('#view-switch button').forEach((b) => {
+    const on = b.dataset.view === view;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    // explicit paint: the pill state must match the mode, not the initial HTML
+    b.style.background = on ? '#303030' : 'transparent';
+    b.style.color = on ? 'var(--text)' : '';
+  });
   $('#hunt-btn').classList.toggle('on', state.mode === 'hunt');
+  $('#hunt-btn').style.display = state.mode === 'chat' ? 'none' : '';
   $('#huntbar').classList.toggle('hidden', state.mode !== 'hunt');
   $('#composer').style.display = state.mode === 'hunt' ? 'none' : 'flex';
   $('#input').placeholder = state.mode === 'chat' ? 'Message Wren' : 'Message the room';

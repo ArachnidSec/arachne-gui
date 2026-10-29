@@ -23,11 +23,6 @@
       <input id="search" type="text" placeholder="Search" autocomplete="off" spellcheck="false" />
     </div>
 
-    <div class="view-switch" id="view-switch" role="tablist">
-      <button data-view="room" class="on" role="tab">agents</button>
-      <button data-view="chat" role="tab">chats</button>
-    </div>
-
     <nav id="threads" class="threads"></nav>
 
     <div class="side-foot">
@@ -44,12 +39,18 @@
 
   <main class="main">
     <header class="topbar">
-      <div class="peer" id="peer">
+      <div class="topbar-left">
+        <div class="view-switch" id="view-switch" role="tablist">
+          <button data-view="chat" role="tab">chat</button>
+          <button data-view="room" class="on" role="tab">agents</button>
+        </div>
+        <div class="peer" id="peer">
         <div class="peer-avatar" id="peer-avatar"></div>
         <div class="peer-text">
           <h1 id="thread-title">new room</h1>
           <div class="peer-meta" id="thread-meta">room · not started</div>
         </div>
+      </div>
       </div>
       <div class="top-actions">
         <button class="ghost-btn" id="hunt-btn" title="run the pipeline">

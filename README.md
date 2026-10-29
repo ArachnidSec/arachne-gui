@@ -62,14 +62,18 @@ leak into a hunt, and nothing a hunt learns shows up in your chat.
 
 Two columns, like a chat app rather than a dashboard:
 
-- the left list is conversations; the switcher above it filters **agents** (rooms)
-  from **chats**, and the search field filters either
+- **chat / agents** at the top of the window is the mode switch: `chat` is a
+  1:1 conversation with one generalist, `agents` is the rooms where the
+  specialists work. They are separate thread namespaces, not a filter
+- the left list shows whichever mode you are in; the search field filters it
 - **evidence** slides over from the right — coverage, state, findings — and
   closes as soon as you go back to the conversation
 - **settings** (bottom left) holds engagement, agents, skills, routing, scope and
   the tool console; none of it is visible while you are talking
 - click a finding to expand its evidence; click a code block to copy it
 - hunt is an action in the header, not a place you sit
+
+![chat mode](docs/chat.png)
 
 ![the evidence panel](docs/evidence.png)
 

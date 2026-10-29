@@ -3,52 +3,39 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>arachne — agent room for RCE research</title>
+<title>arachne</title>
 <link rel="stylesheet" href="/style.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23f3ead9'/><circle cx='11' cy='14' r='2.4' fill='%2317130f'/><circle cx='21' cy='14' r='2.4' fill='%2317130f'/></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23f3eee1'/><circle cx='11' cy='14' r='2.4' fill='%23191714'/><circle cx='21' cy='14' r='2.4' fill='%23191714'/></svg>" />
 </head>
 <body>
 <div class="app">
 
   <aside class="sidebar">
-    <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M32 5 C44 5 53 13 55 24 C57 35 52 47 43 53 C34 59 22 58 15 50 C8 42 7 30 12 21 C17 12 24 5 32 5 Z" fill="none" stroke="currentColor" stroke-width="2.5"/>
-        <path d="M32 12 L32 50 M20 20 L44 44 M44 20 L20 44" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
-        <circle cx="32" cy="31" r="6.5" fill="currentColor"/>
-      </svg>
-      <div class="brand-text">
-        <div class="brand-name">arachne</div>
-        <div class="brand-sub">local agent room</div>
-      </div>
+    <div class="side-head">
+      <div class="brand">arachne</div>
+      <button class="icon-btn" id="new-room" title="new room" aria-label="new room">
+        <svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="search">
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <input id="search" type="text" placeholder="Search" autocomplete="off" spellcheck="false" />
     </div>
 
     <div class="view-switch" id="view-switch" role="tablist">
       <button data-view="room" class="on" role="tab">agents</button>
-      <button data-view="chat" role="tab">chat</button>
+      <button data-view="chat" role="tab">chats</button>
     </div>
 
-    <button class="new-room" id="new-room">
-      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      new room
-    </button>
-
-    <div class="side-scroll">
-      <div class="side-label"><span>rooms</span></div>
-      <nav id="threads" class="threads"></nav>
-
-      <div class="side-label">
-        <span>chats</span>
-        <button id="new-chat" class="mini" title="new chat" aria-label="new chat">+</button>
-      </div>
-      <nav id="chats" class="chats"></nav>
-
-      <div class="side-label"><span>in the room</span></div>
-      <div id="roster" class="roster"></div>
-    </div>
+    <nav id="threads" class="threads"></nav>
 
     <div class="side-foot">
-      <button id="engine-toggle" class="engine-pill">
+      <button class="foot-row" id="settings-btn">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Settings
+      </button>
+      <button class="foot-row" id="engine-toggle">
         <span class="dot" id="engine-dot"></span>
         <span id="engine-label">probing engines…</span>
       </button>
@@ -57,14 +44,23 @@
 
   <main class="main">
     <header class="topbar">
-      <div class="topbar-left">
-        <h1 id="thread-title">new room</h1>
-        <div class="thread-meta" id="thread-meta">room · not started</div>
+      <div class="peer" id="peer">
+        <div class="peer-avatar" id="peer-avatar"></div>
+        <div class="peer-text">
+          <h1 id="thread-title">new room</h1>
+          <div class="peer-meta" id="thread-meta">room · not started</div>
+        </div>
       </div>
-      <button class="hunt-btn" id="hunt-btn" title="run the seven-stage pipeline">
-        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        hunt
-      </button>
+      <div class="top-actions">
+        <button class="ghost-btn" id="hunt-btn" title="run the pipeline">
+          <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="8" cy="8" r="2.8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M8 1.4v2.6M8 12v2.6M1.4 8h2.6M12 8h2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          hunt
+        </button>
+        <button class="ghost-btn" id="evidence-btn" title="findings and coverage">
+          <svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 13V8M6 13V4M10 13V6M14 13V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          evidence
+        </button>
+      </div>
     </header>
 
     <section id="transcript" class="transcript"></section>
@@ -72,120 +68,130 @@
     <footer class="composer-wrap">
       <div id="huntbar" class="huntbar hidden">
         <input id="hunt-target" type="text" placeholder="path under the workspace, e.g. fixtures/vuln" />
-        <button id="hunt-run">run hunt</button>
+        <button id="hunt-run">run</button>
       </div>
       <form id="composer" class="composer">
-        <div class="composer-top">
+        <button type="button" class="plus" id="new-chat" title="new chat">
+          <svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+        <textarea id="input" rows="1" placeholder="Message the room"></textarea>
+        <div class="composer-right">
           <select id="agent-select" title="who answers"></select>
-          <span class="composer-hint" id="composer-hint">room protocol: fan-out · tapback · handoff</span>
-        </div>
-        <textarea id="input" rows="1" placeholder="ask the room…"></textarea>
-        <div class="composer-bottom">
-          <span class="keys"><kbd>↵</kbd> send <span class="sep">·</span> <kbd>⇧↵</kbd> newline</span>
-          <div class="composer-actions">
-            <button type="button" id="stop" class="stop hidden" title="stop">stop</button>
-            <button type="submit" id="send" class="send" aria-label="send">
-              <svg viewBox="0 0 24 24" width="15" height="15"><path d="M4 12 L20 4 L14 20 L11 13 Z" fill="currentColor"/></svg>
-            </button>
-          </div>
+          <button type="button" id="stop" class="stop hidden">stop</button>
+          <button type="submit" id="send" class="send" aria-label="send">
+            <svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 12.5V3.5M4 7l4-3.5L12 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
         </div>
       </form>
+      <div class="composer-hint" id="composer-hint">room protocol · fan-out · tapback · handoff</div>
     </footer>
   </main>
-
-  <aside class="rail" id="rail">
-    <div class="rail-tabs" id="rail-tabs">
-      <button data-tab="evidence" class="on">evidence</button>
-      <button data-tab="setup">setup</button>
-    </div>
-
-    <div class="rail-body">
-      <div class="tab-pane" id="tab-evidence">
-        <div class="campaign" id="campaign">
-          <span class="camp-name" id="campaign-text">no campaign running</span>
-          <button class="mini" id="campaign-btn">start</button>
-        </div>
-
-        <section class="rail-section">
-          <div class="rail-head"><span>coverage</span><span class="count" id="cov-count">0</span></div>
-          <div id="ledger-summary" class="stats"></div>
-          <div id="entities" class="entities"></div>
-          <div id="intents" class="intents"></div>
-        </section>
-
-        <section class="rail-section">
-          <div class="rail-head"><span>findings</span><span class="count" id="finding-count">0</span></div>
-          <div id="findings" class="findings"><div class="empty">no findings yet</div></div>
-        </section>
-      </div>
-
-      <div class="tab-pane hidden" id="tab-setup">
-        <section class="rail-section">
-          <div class="rail-head"><span>engagement</span><span class="tiny" id="eng-state">none active</span></div>
-          <input id="eng-name" class="text-input" placeholder="engagement name" autocomplete="off" />
-          <textarea id="eng-targets" rows="2" spellcheck="false" placeholder="authorized targets — host or url, one per line"></textarea>
-          <button class="ghost" id="eng-start">start engagement</button>
-        </section>
-
-        <section class="rail-section">
-          <div class="rail-head"><span>skills</span><span class="tiny" id="skill-count">0 loaded</span></div>
-          <div id="skills" class="skills"></div>
-        </section>
-
-        <section class="rail-section">
-          <div class="rail-head">
-            <span>routing</span>
-            <span class="rail-actions">
-              <button class="ghost tiny" id="engine-add-toggle" title="add an engine or router">+ engine</button>
-              <button class="ghost tiny" id="route-refresh">refresh</button>
-            </span>
-          </div>
-          <div id="routing" class="routing"></div>
-          <form class="engine-add hidden" id="engine-add">
-            <select id="eng-preset" class="text-input">
-              <option value="">preset…</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="llamacpp">llama.cpp</option>
-              <option value="ollama">Ollama (remote)</option>
-              <option value="custom">custom</option>
-            </select>
-            <input id="eng-label" class="text-input" placeholder="label" autocomplete="off" />
-            <select id="eng-kind" class="text-input">
-              <option value="openai">openai-compatible</option>
-              <option value="ollama">ollama</option>
-            </select>
-            <input id="eng-base" class="text-input" placeholder="https://host/v1" autocomplete="off" spellcheck="false" />
-            <input id="eng-key" class="text-input" type="password" placeholder="api key (optional, stays local)" autocomplete="off" />
-            <button class="ghost" id="engine-add-run" type="button">add engine</button>
-          </form>
-        </section>
-
-        <section class="rail-section">
-          <div class="rail-head"><span>scope</span><span class="tiny">authorization</span></div>
-          <label class="field">
-            <span>hosts</span>
-            <textarea id="scope-hosts" rows="2" spellcheck="false" placeholder="127.0.0.1, localhost"></textarea>
-          </label>
-          <label class="field">
-            <span>paths</span>
-            <textarea id="scope-paths" rows="2" spellcheck="false" placeholder="(workspace is always in scope)"></textarea>
-          </label>
-          <button class="ghost" id="scope-save">save scope</button>
-        </section>
-
-        <section class="rail-section">
-          <div class="rail-head"><span>console</span><span class="tiny">single tool</span></div>
-          <div class="console">
-            <select id="console-tool"></select>
-            <textarea id="console-args" rows="2" spellcheck="false">{}</textarea>
-            <button class="ghost" id="console-run">run</button>
-            <pre id="console-out" class="console-out"></pre>
-          </div>
-        </section>
-      </div>
-    </div>
-  </aside>
 </div>
+
+<div id="scrim" class="scrim hidden"></div>
+
+<aside class="panel hidden" id="panel">
+  <div class="panel-head">
+    <div class="panel-tabs" id="panel-tabs">
+      <button data-tab="evidence" class="on">evidence</button>
+      <button data-tab="settings">settings</button>
+    </div>
+    <button class="icon-btn" id="panel-close" aria-label="close">
+      <svg viewBox="0 0 16 16" width="15" height="15"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <div class="panel-body">
+    <div class="tab-pane" id="tab-evidence">
+      <div class="campaign" id="campaign">
+        <span class="camp-name" id="campaign-text">no campaign running</span>
+        <button class="mini" id="campaign-btn">start</button>
+      </div>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>coverage</span><span class="count" id="cov-count">0</span></div>
+        <div id="ledger-summary" class="stats"></div>
+        <div id="entities" class="entities"></div>
+        <div id="intents" class="intents"></div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>findings</span><span class="count" id="finding-count">0</span></div>
+        <div id="findings" class="findings"><div class="empty">no findings yet</div></div>
+      </section>
+    </div>
+
+    <div class="tab-pane hidden" id="tab-settings">
+      <section class="rail-section">
+        <div class="rail-head"><span>engagement</span><span class="tiny" id="eng-state">none active</span></div>
+        <input id="eng-name" class="text-input" placeholder="engagement name" autocomplete="off" />
+        <textarea id="eng-targets" rows="2" spellcheck="false" placeholder="authorized targets — host or url, one per line"></textarea>
+        <button class="ghost" id="eng-start">start engagement</button>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>agents</span><span class="tiny">who is in the room</span></div>
+        <div id="roster" class="roster"></div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>skills</span><span class="tiny" id="skill-count">0 loaded</span></div>
+        <div id="skills" class="skills"></div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head">
+          <span>routing</span>
+          <span class="rail-actions">
+            <button class="ghost tiny" id="engine-add-toggle" title="add an engine or router">+ engine</button>
+            <button class="ghost tiny" id="route-refresh">refresh</button>
+          </span>
+        </div>
+        <div id="routing" class="routing"></div>
+        <form class="engine-add hidden" id="engine-add">
+          <select id="eng-preset" class="text-input">
+            <option value="">preset…</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="llamacpp">llama.cpp</option>
+            <option value="ollama">Ollama (remote)</option>
+            <option value="custom">custom</option>
+          </select>
+          <input id="eng-label" class="text-input" placeholder="label" autocomplete="off" />
+          <select id="eng-kind" class="text-input">
+            <option value="openai">openai-compatible</option>
+            <option value="ollama">ollama</option>
+          </select>
+          <input id="eng-base" class="text-input" placeholder="https://host/v1" autocomplete="off" spellcheck="false" />
+          <input id="eng-key" class="text-input" type="password" placeholder="api key (optional, stays local)" autocomplete="off" />
+          <button class="ghost" id="engine-add-run" type="button">add engine</button>
+        </form>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>scope</span><span class="tiny">authorization</span></div>
+        <label class="field">
+          <span>hosts</span>
+          <textarea id="scope-hosts" rows="2" spellcheck="false" placeholder="127.0.0.1, localhost"></textarea>
+        </label>
+        <label class="field">
+          <span>paths</span>
+          <textarea id="scope-paths" rows="2" spellcheck="false" placeholder="(workspace is always in scope)"></textarea>
+        </label>
+        <button class="ghost" id="scope-save">save scope</button>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span>console</span><span class="tiny">single tool</span></div>
+        <div class="console">
+          <select id="console-tool"></select>
+          <textarea id="console-args" rows="2" spellcheck="false">{}</textarea>
+          <button class="ghost" id="console-run">run</button>
+          <pre id="console-out" class="console-out"></pre>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
 
 <div id="agent-modal" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-backdrop" data-close></div>

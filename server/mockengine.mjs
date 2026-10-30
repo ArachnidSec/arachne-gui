@@ -29,6 +29,17 @@ function chunk(delta, finish = null) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// In-character stand-ins so the interface can be exercised without a model.
+const MOCK_REPLIES = {
+  default: ['I am the mock engine. ', 'No model is behind this answer — route one in settings → routing when you want analysis.'],
+  Mira: ['Surface first: ', 'entry points are argv and stdin, the build is a single C file, and nothing listens on the network. ', 'Ivo should read `store_record` next.'],
+  Ivo: ['Read `store_record` in full. ', '`strcpy(buffer, record)` writes into `char[64]` with a length taken straight from argv — the chain runs argv[1] → `store_record` → `strcpy`. ', 'That is a candidate, not a finding.'],
+  Rook: ['Harness written under `pocs/`. ', 'Compiled with `-fsanitize=address`; a 300-byte argument produces a stack-buffer-overflow at `strcpy`. ', 'Sable should re-run it before anyone calls it confirmed.'],
+  Sable: ['Reproduced twice, same frame both times. ', 'The write is a linear stack overflow into a 64-byte buffer, no control demonstrated yet. ', 'I would keep that at high, not critical.'],
+  Juniper: ['Report drafted: surface, the confirmed overflow with its repro, and the two candidates that died. ', 'Filed under `reports/`.'],
+  Kestrel: ['One direction worth opening: trace argv[1] into the memcpy at `vuln.c:24`. ', 'Nothing else in the surface reaches a sink.'],
+};
+
 async function stream(res, pieces, opts = {}) {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -89,6 +100,8 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw); } catch {}
       const messages = body.messages || [];
+      const persona = String(messages[0]?.content || '').match(/You (?:are|map|read|build|write|plan|decide)/i);
+      const who = (String(messages[0]?.content || '').match(/\b(Mira|Ivo|Rook|Sable|Juniper|Kestrel|Wren)\b/) || [])[1] || 'default';
       const prompt = lastUser(messages);
       const summary = toolSummary(messages);
 
@@ -140,11 +153,7 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      await stream(res, [
-        'I am the mock engine, so there is no model behind this answer. ',
-        'The loop, the streaming and the tool channel are what is being tested here. ',
-        'Route a real model in Settings → routing when you want analysis.',
-      ]);
+      await stream(res, MOCK_REPLIES[who] || MOCK_REPLIES.default);
     });
     return;
   }

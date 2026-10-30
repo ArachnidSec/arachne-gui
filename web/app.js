@@ -280,6 +280,7 @@ const relTime = (ts) => {
 const modelName = () => state.health?.roles?.chat?.model || 'no model';
 
 const openProjects = new Set();
+let creating = null; // in-flight thread creation, so a fast send waits for it
 const PLUS = '<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 const DOTS = '<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="3.5" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="12.5" cy="8" r="1.3" fill="currentColor"/></svg>';
 
@@ -398,7 +399,7 @@ function agentRow(agent) {
       <div class="row-top"><span class="row-name">${escapeHtml(agent.name)}</span><span class="row-time">${direct ? relTime(direct.updatedAt) : ''}</span></div>
       <div class="row-preview">${escapeHtml(direct ? (direct.preview || agent.role) : `start a chat · ${agent.role.toLowerCase()}`)}</div>
     </div>`;
-  row.onclick = () => (direct ? openThread(direct.id, 'room') : openCreate('direct', { agentId: agent.id }));
+  row.onclick = () => startDirect(agent.id);
   if (direct) {
     withMenu(row, [
       { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: direct }) },
@@ -468,6 +469,18 @@ function renderThreads() {
 }
 
 /* ---------------------------------------------------------------- actions */
+
+async function startDirect(agentId) {
+  const existing = state.roomThreads.find((t) => t.direct && (t.members || [])[0] === agentId);
+  if (existing) return openThread(existing.id, 'room');
+  const agent = agentOf(agentId);
+  const { thread } = await api('/api/threads', {
+    method: 'POST',
+    body: { kind: 'room', title: agent.name, members: [agentId], direct: true },
+  });
+  await refreshThreads();
+  openThread(thread.id, 'room');
+}
 
 async function patchThread(id, patch) {
   try {
@@ -578,13 +591,8 @@ async function runCreate() {
       return;
     }
     if (createCtx.kind === 'direct') {
-      const existing = state.roomThreads.find((t) => t.direct && (t.members || [])[0] === single);
       closeCreate();
-      if (existing) { openThread(existing.id, 'room'); return; }
-      const agent = agentOf(single);
-      const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'room', title: agent.name, members: [single], direct: true } });
-      await refreshThreads();
-      openThread(thread.id, 'room');
+      await startDirect(single);
       $('#input').focus();
       return;
     }
@@ -860,6 +868,14 @@ function showChatEmpty({ keepHeader = false } = {}) {
   $('#thread-meta').textContent = modelName();
 }
 
+const inner = () => $('#transcript-inner');
+
+function addUserMessage(text) {
+  if (!inner()) clearTranscript();
+  inner().appendChild(el('div', 'msg user', `<div class="bubble">${escapeHtml(text)}</div>`));
+  scrollDown(true);
+}
+
 function addAgentMessage(m) {
   if (!inner()) clearTranscript();
   const agent = agentOf(m.agentId);
@@ -1034,6 +1050,8 @@ function newConversation() {
 }
 
 async function newRoom() {
+  const done = Promise.withResolvers();
+  creating = done.promise;
   const { thread } = await api('/api/threads', {
     method: 'POST',
     body: { kind: 'room', title: 'new room', members: ['scout', 'static', 'hunter'] },
@@ -1048,9 +1066,12 @@ async function newRoom() {
   renderThreads();
   renderEmpty('room');
   $('#input').focus();
+  done.resolve(); creating = null;
 }
 
 async function newChat(projectId = null) {
+  const done = Promise.withResolvers();
+  creating = done.promise;
   const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'chat', projectId } });
   state.chatThreads.unshift({ id: thread.id, title: thread.title, preview: '', kind: 'chat', projectId: thread.projectId || null, members: ['chat'] });
   state.chatThreadId = thread.id;
@@ -1062,6 +1083,7 @@ async function newChat(projectId = null) {
   renderThreads();
   showChatEmpty();
   $('#input').focus();
+  done.resolve(); creating = null;
 }
 
 /* ------------------------------------------------------------------ send */
@@ -1078,6 +1100,7 @@ function setBusy(busy) {
 }
 
 async function send() {
+  if (creating) await creating;
   const text = $('#input').value.trim();
   if (!text || state.streaming) return;
   $('#input').value = '';
@@ -1377,6 +1400,19 @@ function wire() {
   });
 
   $('#hunt-btn').onclick = () => setMode(state.mode === 'hunt' ? 'room' : 'hunt');
+
+  const setCollapsed = (on) => {
+    state.collapsed = on;
+    $('.app').classList.toggle('collapsed', on);
+    // the switcher lives in the sidebar header; when it is hidden it moves up
+    const slot = on ? $('#top-slot') : $('.side-head');
+    slot.appendChild($('#view-switch'));
+    $('#collapse-btn').title = on ? 'show sidebar' : 'hide sidebar';
+    try { localStorage.setItem('arachne.collapsed', on ? '1' : '0'); } catch {}
+  };
+  state.setCollapsed = setCollapsed;
+  $('#collapse-btn').onclick = () => setCollapsed(!state.collapsed);
+  if (localStorage.getItem('arachne.collapsed') === '1') setCollapsed(true);
 
   const ENGINE_PRESETS = {
     openrouter: { label: 'openrouter', kind: 'openai', base: 'https://openrouter.ai/api/v1' },

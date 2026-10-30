@@ -36,6 +36,7 @@ the routing rail, or add an engine in `config.json`.
 
 ```bash
 node server/selftest.mjs         # 31 checks, no model required
+npm run drive                    # 17 interaction checks in headless Chrome
 node server/mockengine.mjs 8099  # a fake OpenAI-compatible engine, for demos
 ```
 
@@ -66,6 +67,7 @@ and clicking a project starts a thread inside it.
 
 Two columns, like a chat app rather than a dashboard:
 
+- a **collapse** button hides the sidebar; the space switcher moves up beside it
 - **chat / agents**, beside the title, switches spaces. They are separate
   namespaces, not a filter: lists, composer and actions all change
 - the list is built from sections, each with its own **+**: *Pinned* (no +),

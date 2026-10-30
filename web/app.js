@@ -240,6 +240,8 @@ async function boot() {
     if (location.hash === '#chat') setMode('chat');
     if (location.hash === '#setup' && window.openPanel) window.openPanel('settings');
     if (location.hash === '#evidence' && window.openPanel) window.openPanel('evidence');
+    const create = location.hash.match(/^#new=(project|thread|room|direct)$/);
+    if (create) openCreate(create[1]);
   } catch (err) {
     $('#transcript').innerHTML = `<div class="empty-state"><div class="big">server is not answering</div><div class="sub">${escapeHtml(err.message)}</div></div>`;
   }
@@ -277,93 +279,331 @@ const relTime = (ts) => {
 
 const modelName = () => state.health?.roles?.chat?.model || 'no model';
 
+const openProjects = new Set();
+const PLUS = '<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const DOTS = '<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="3.5" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="12.5" cy="8" r="1.3" fill="currentColor"/></svg>';
+
+/* ---------------------------------------------------------------- row menus */
+
+function closeMenus() {
+  document.querySelectorAll('.menu').forEach((n) => n.remove());
+}
+
+function openRowMenu(anchor, items) {
+  closeMenus();
+  const menu = el('div', 'menu');
+  for (const item of items) {
+    const b = el('button', item.danger ? 'danger' : '');
+    b.textContent = item.label;
+    b.onclick = () => { closeMenus(); item.onClick(); };
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(r.right - 150, window.innerWidth - 190))}px`;
+  menu.style.top = `${Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 12)}px`;
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.menu') && !e.target.closest('.dots')) closeMenus();
+});
+
+/* ---------------------------------------------------------------- sections */
+
+function sectionHead(label, onCreate) {
+  const head = el('div', 'section-head');
+  head.innerHTML = `<span class="label">${escapeHtml(label)}</span>`;
+  if (onCreate) {
+    const add = el('button', 'add');
+    add.innerHTML = PLUS;
+    add.title = `new ${label.toLowerCase().replace(/s$/, '')}`;
+    add.onclick = (e) => { e.stopPropagation(); onCreate(); };
+    head.appendChild(add);
+  }
+  return head;
+}
+
+function withMenu(row, items) {
+  const dots = el('button', 'dots');
+  dots.innerHTML = DOTS;
+  dots.onclick = (e) => { e.stopPropagation(); openRowMenu(dots, items); };
+  row.appendChild(dots);
+  return row;
+}
+
+function threadRow(t, { child = false, active = false } = {}) {
+  const row = el('div', `row${child ? ' child' : ''}${active ? ' on' : ''}`);
+  row.innerHTML = `
+    <div class="row-avatar glyph">${t.kind === 'chat' ? CHAT_GLYPH : ''}</div>
+    <div class="row-main">
+      <div class="row-top"><span class="row-name">${escapeHtml(t.title)}</span><span class="row-time">${relTime(t.updatedAt)}</span></div>
+      <div class="row-preview">${escapeHtml(t.preview || '')}</div>
+    </div>`;
+  row.onclick = () => openThread(t.id, t.kind || 'chat');
+  return withMenu(row, [
+    { label: t.pinned ? 'Unpin' : 'Pin', onClick: () => patchThread(t.id, { pinned: !t.pinned }) },
+    { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: t }) },
+    { label: 'Delete', danger: true, onClick: () => removeThread(t.id) },
+  ]);
+}
+
+function roomRow(t, { active = false } = {}) {
+  const row = el('div', `row${active ? ' on' : ''}`);
+  row.innerHTML = `
+    <div class="row-avatar"><div class="stack">${(t.members || []).slice(0, 3).map((id) => avatarSvg(agentOf(id))).join('')}</div></div>
+    <div class="row-main">
+      <div class="row-top"><span class="row-name">${escapeHtml(t.title)}</span><span class="row-time">${relTime(t.updatedAt)}</span></div>
+      <div class="row-preview">${escapeHtml(t.preview || '')}</div>
+    </div>`;
+  row.onclick = () => openThread(t.id, 'room');
+  return withMenu(row, [
+    { label: t.pinned ? 'Unpin' : 'Pin', onClick: () => patchThread(t.id, { pinned: !t.pinned }) },
+    { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: t }) },
+    { label: 'Delete', danger: true, onClick: () => removeThread(t.id) },
+  ]);
+}
+
+function projectRow(project) {
+  const open = openProjects.has(project.id);
+  const row = el('div', `row proj${open ? ' open' : ''}`);
+  row.innerHTML = `
+    <span class="chev"><svg viewBox="0 0 12 12" width="10" height="10"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <div class="row-avatar"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg></div>
+    <div class="row-main">
+      <div class="row-top"><span class="row-name">${escapeHtml(project.name)}</span><span class="row-time">${project.threads || ''}</span></div>
+    </div>`;
+  row.onclick = () => {
+    if (open) openProjects.delete(project.id); else openProjects.add(project.id);
+    renderThreads();
+  };
+  const add = el('button', 'dots');
+  add.innerHTML = PLUS;
+  add.style.right = '26px';
+  add.title = 'new thread in this project';
+  add.onclick = (e) => { e.stopPropagation(); openCreate('thread', { projectId: project.id }); };
+  row.appendChild(add);
+  return withMenu(row, [
+    { label: 'New thread here', onClick: () => openCreate('thread', { projectId: project.id }) },
+    { label: 'Rename', onClick: () => openCreate('rename', { target: 'project', item: project }) },
+    { label: 'Delete', danger: true, onClick: () => removeProject(project.id) },
+  ]);
+}
+
+function agentRow(agent) {
+  const direct = state.roomThreads.find((t) => t.direct && (t.members || [])[0] === agent.id);
+  const row = el('div', `row${direct && direct.id === state.roomThreadId ? ' on' : ''}`);
+  row.innerHTML = `
+    <div class="row-avatar">${avatarSvg(agent)}</div>
+    <div class="row-main">
+      <div class="row-top"><span class="row-name">${escapeHtml(agent.name)}</span><span class="row-time">${direct ? relTime(direct.updatedAt) : ''}</span></div>
+      <div class="row-preview">${escapeHtml(direct ? (direct.preview || agent.role) : `start a chat · ${agent.role.toLowerCase()}`)}</div>
+    </div>`;
+  row.onclick = () => (direct ? openThread(direct.id, 'room') : openCreate('direct', { agentId: agent.id }));
+  if (direct) {
+    withMenu(row, [
+      { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: direct }) },
+      { label: 'Delete', danger: true, onClick: () => removeThread(direct.id) },
+    ]);
+  }
+  return row;
+}
+
+/* ---------------------------------------------------------------- list */
+
 function renderThreads() {
   const box = $('#threads');
   if (!box) return;
   const q = ($('#search')?.value || '').trim().toLowerCase();
   const isChat = state.mode === 'chat';
-  const list = (isChat ? state.chatThreads : state.roomThreads)
-    .filter((t) => !q || `${t.title} ${t.preview || ''}`.toLowerCase().includes(q));
-  const activeId = isChat ? state.chatThreadId : state.roomThreadId;
+  const all = isChat ? state.chatThreads : state.roomThreads.filter((t) => !t.direct);
+  const list = all.filter((t) => !q || `${t.title} ${t.preview || ''}`.toLowerCase().includes(q));
+  const pinned = list.filter((t) => t.pinned);
+  const rest = list.filter((t) => !t.pinned);
 
   box.innerHTML = '';
 
   if (!q) {
-    const fresh = el('button', 'row new');
+    const fresh = el('div', 'row new');
     fresh.innerHTML = `
-      <div class="row-avatar"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div class="row-avatar">${PLUS}</div>
       <div class="row-main"><span class="row-name">${isChat ? 'New thread' : 'New room'}</span></div>`;
     fresh.onclick = newConversation;
     box.appendChild(fresh);
   }
 
-  if (isChat && !q) {
-    if (state.projects.length) {
-      box.insertAdjacentHTML('beforeend', '<div class="side-label"><span>projects</span></div>');
-      for (const p of state.projects) {
-        const row = el('button', 'row proj');
-        row.innerHTML = `
-          <div class="row-avatar"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.5h5.2A1.5 1.5 0 0 1 14 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg></div>
-          <div class="row-main"><div class="row-top"><span class="row-name">${escapeHtml(p.name)}</span><span class="row-time">${p.threads || ''}</span></div></div>`;
-        row.title = `new thread in ${p.name}`;
-        row.onclick = () => newChat(p.id);
-        box.appendChild(row);
+  if (pinned.length) {
+    box.appendChild(sectionHead('Pinned', null));
+    for (const t of pinned) box.appendChild(isChat ? threadRow(t, { active: t.id === state.chatThreadId }) : roomRow(t, { active: t.id === state.roomThreadId }));
+  }
+
+  if (isChat) {
+    const projects = (state.projects || []).filter((p) => !q || p.name.toLowerCase().includes(q));
+    box.appendChild(sectionHead('Projects', () => openCreate('project')));
+    for (const p of projects) {
+      box.appendChild(projectRow(p));
+      if (openProjects.has(p.id)) {
+        const kids = rest.filter((t) => t.projectId === p.id);
+        for (const t of kids) box.appendChild(threadRow(t, { child: true, active: t.id === state.chatThreadId }));
       }
     }
-    const add = el('button', 'row subtle');
-    add.innerHTML = `
-      <div class="row-avatar"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-      <div class="row-main"><span class="row-name">New project</span></div>`;
-    add.onclick = startNewProject;
-    box.appendChild(add);
-    box.insertAdjacentHTML('beforeend', '<div class="side-label"><span>threads</span></div>');
+
+    box.appendChild(sectionHead('Threads', () => openCreate('thread')));
+    for (const t of rest.filter((t) => !t.projectId)) {
+      box.appendChild(threadRow(t, { active: t.id === state.chatThreadId }));
+    }
+  } else {
+    box.appendChild(sectionHead('Rooms', () => openCreate('room')));
+    for (const t of rest) box.appendChild(roomRow(t, { active: t.id === state.roomThreadId }));
+
+    box.appendChild(sectionHead('Agents', () => openCreate('direct')));
+    for (const a of state.agents.filter((x) => x.id !== 'chat')) {
+      if (q && !a.name.toLowerCase().includes(q) && !a.role.toLowerCase().includes(q)) continue;
+      box.appendChild(agentRow(a));
+    }
   }
 
-  if (!list.length) {
-    if (q) box.insertAdjacentHTML('beforeend', '<div class="row-preview" style="padding:12px">nothing matches</div>');
-    return;
-  }
-
-  for (const t of list) {
-    const row = el('button', `row${t.id === activeId ? ' on' : ''}`);
-    const avatars = (t.kind === 'chat' || isChat)
-      ? `<div class="row-avatar glyph">${CHAT_GLYPH}</div>`
-      : `<div class="stack">${(t.members || []).slice(0, 3).map((id) => avatarSvg(agentOf(id))).join('')}</div>`;
-    row.innerHTML = `
-      <div class="row-avatar">${avatars}</div>
-      <div class="row-main">
-        <div class="row-top"><span class="row-name">${escapeHtml(t.title)}</span><span class="row-time">${relTime(t.updatedAt)}</span></div>
-        <div class="row-preview">${escapeHtml(t.preview || '')}</div>
-      </div>`;
-    row.onclick = () => openThread(t.id, t.kind || 'room');
-    box.appendChild(row);
+  if (q && !box.querySelector('.row:not(.new)')) {
+    box.insertAdjacentHTML('beforeend', '<div class="row-preview" style="padding:12px">nothing matches</div>');
   }
 }
 
-function startNewProject() {
-  const box = $('#threads');
-  if (box.querySelector('.proj-input')) return;
-  const row = el('div', 'row proj-input');
-  row.innerHTML = `
-    <div class="row-avatar"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-    <div class="row-main"><input placeholder="Project name" /></div>`;
-  box.prepend(row);
-  const input = row.querySelector('input');
-  input.focus();
-  input.onkeydown = async (e) => {
-    if (e.key === 'Escape') { row.remove(); return; }
-    if (e.key !== 'Enter') return;
-    const name = input.value.trim();
-    if (!name) { row.remove(); return; }
-    try {
-      const { project } = await api('/api/projects', { method: 'POST', body: { name } });
+/* ---------------------------------------------------------------- actions */
+
+async function patchThread(id, patch) {
+  try {
+    await api(`/api/threads/${id}`, { method: 'PATCH', body: patch });
+    await refreshThreads();
+  } catch (err) { toast(err.message); }
+}
+
+async function removeThread(id) {
+  try {
+    await api(`/api/threads/${id}`, { method: 'DELETE' });
+    if (state.chatThreadId === id) { state.chatThreadId = null; showChatEmpty(); }
+    if (state.roomThreadId === id) { state.roomThreadId = null; renderEmpty('room'); }
+    await refreshThreads();
+    toast('deleted');
+  } catch (err) { toast(err.message); }
+}
+
+async function removeProject(id) {
+  try {
+    await api(`/api/projects/${id}`, { method: 'DELETE' });
+    openProjects.delete(id);
+    state.projects = state.projects.filter((p) => p.id !== id);
+    renderThreads();
+    toast('project deleted');
+  } catch (err) { toast(err.message); }
+}
+
+let createCtx = null;
+
+function openCreate(kind, prefill = {}) {
+  createCtx = { kind, ...prefill };
+  const cfg = {
+    project: { title: 'Create New Project', nameLabel: 'Project Name', ph: 'Enter project name…', single: 'assistant', singleLabel: 'Assistant', run: 'Create' },
+    thread: { title: 'New Thread', nameLabel: 'Thread Name', ph: 'Leave blank to name it from the first message', run: 'Create' },
+    room: { title: 'Create New Room', nameLabel: 'Room Name', ph: 'e.g. acme-checkout', members: true, run: 'Create' },
+    direct: { title: 'New Agent Chat', nameLabel: '', single: 'agent', singleLabel: 'Agent', run: 'Start' },
+    rename: { title: 'Rename', nameLabel: 'Name', ph: '', run: 'Save' },
+  }[kind];
+  if (!cfg) return;
+
+  $('#create-title').textContent = cfg.title;
+  $('#create-name-label').textContent = cfg.nameLabel || '';
+  const nameRow = $('#create-name').closest('.create-field');
+  nameRow.classList.toggle('hidden', !cfg.nameLabel);
+  $('#create-name').placeholder = cfg.ph || '';
+  $('#create-name').value = kind === 'rename' ? (prefill.item?.name || prefill.item?.title || '') : '';
+
+  const singleRow = $('#create-single-row');
+  singleRow.classList.toggle('hidden', !cfg.single);
+  if (cfg.single) {
+    $('#create-single-label').textContent = cfg.singleLabel;
+    const opts = cfg.single === 'agent'
+      ? state.agents.filter((a) => a.id !== 'chat').map((a) => `<option value="${a.id}">${escapeHtml(a.name)} — ${escapeHtml(a.role.toLowerCase())}</option>`)
+      : [`<option value="chat">Default assistant · ${escapeHtml(modelName())}</option>`];
+    $('#create-single').innerHTML = opts.join('');
+    if (prefill.agentId) $('#create-single').value = prefill.agentId;
+  }
+
+  const membersRow = $('#create-members-row');
+  membersRow.classList.toggle('hidden', !cfg.members);
+  if (cfg.members) {
+    $('#create-members').innerHTML = state.agents.filter((a) => a.id !== 'chat').map((a) => `
+      <label><input type="checkbox" value="${a.id}" ${['scout', 'static', 'hunter'].includes(a.id) ? 'checked' : ''} /> ${escapeHtml(a.name)} <span class="tiny">${escapeHtml(a.role.toLowerCase())}</span></label>`).join('');
+  }
+
+  $('#create-run').textContent = cfg.run;
+  $('#create-modal').classList.remove('hidden');
+  setTimeout(() => (cfg.nameLabel ? $('#create-name') : $('#create-single'))?.focus(), 30);
+}
+
+function closeCreate() {
+  $('#create-modal').classList.add('hidden');
+  createCtx = null;
+}
+
+async function runCreate() {
+  if (!createCtx) return;
+  const name = $('#create-name').value.trim();
+  const single = $('#create-single').value;
+  const members = [...document.querySelectorAll('#create-members input:checked')].map((i) => i.value);
+  try {
+    if (createCtx.kind === 'project') {
+      const { project } = await api('/api/projects', { method: 'POST', body: { name: name || 'Project' } });
       state.projects.unshift({ ...project, threads: 0 });
+      openProjects.add(project.id);
+      closeCreate();
       renderThreads();
       toast(`project ${project.name}`);
-    } catch (err) {
-      toast(err.message);
+      return;
     }
-  };
+    if (createCtx.kind === 'thread') {
+      const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'chat', title: name || undefined, projectId: createCtx.projectId || null } });
+      state.chatThreads.unshift({ ...thread, preview: '' });
+      closeCreate();
+      await refreshThreads();
+      openThread(thread.id, 'chat');
+      $('#input').focus();
+      return;
+    }
+    if (createCtx.kind === 'room') {
+      const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'room', title: name || 'new room', members: members.length ? members : ['scout', 'static', 'hunter'] } });
+      state.roomThreads.unshift({ ...thread, preview: '' });
+      closeCreate();
+      await refreshThreads();
+      openThread(thread.id, 'room');
+      $('#input').focus();
+      return;
+    }
+    if (createCtx.kind === 'direct') {
+      const existing = state.roomThreads.find((t) => t.direct && (t.members || [])[0] === single);
+      closeCreate();
+      if (existing) { openThread(existing.id, 'room'); return; }
+      const agent = agentOf(single);
+      const { thread } = await api('/api/threads', { method: 'POST', body: { kind: 'room', title: agent.name, members: [single], direct: true } });
+      await refreshThreads();
+      openThread(thread.id, 'room');
+      $('#input').focus();
+      return;
+    }
+    if (createCtx.kind === 'rename') {
+      const { target, item } = createCtx;
+      if (target === 'project') {
+        await api(`/api/projects/${item.id}`, { method: 'PATCH', body: { name } });
+      } else {
+        await api(`/api/threads/${item.id}`, { method: 'PATCH', body: { title: name } });
+      }
+      closeCreate();
+      await refreshThreads();
+      state.projects = await api('/api/projects').then((r) => r.projects).catch(() => state.projects);
+      renderThreads();
+      if (state.thread && state.thread.id === item.id) $('#thread-title').textContent = name;
+    }
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 function renderHealth() {
@@ -572,7 +812,7 @@ function updateComposerHint() {
 
 /* ------------------------------------------------------------------ transcript */
 
-function renderEmpty(kind = 'room') {
+function renderEmpty(kind = 'room', { keepHeader = false } = {}) {
   $('#transcript').innerHTML = `<div class="transcript-inner"><div class="empty">
     <div class="empty-orb">${avatarSvg(agentOf('scout'))}</div>
     <div class="big">a quiet room</div>
@@ -584,6 +824,9 @@ function renderEmpty(kind = 'room') {
       <button data-suggest="build a harness for the top candidate and run it under ASan">build a harness</button>
     </div>
   </div></div>`;
+  if (keepHeader) return;
+  $('#peer-avatar').style.display = 'grid';
+  $('#peer-avatar').style.placeItems = 'center';
   $('#peer-avatar').innerHTML = avatarSvg(agentOf('scout'));
   $('#thread-title').textContent = 'new room';
   $('#thread-meta').textContent = 'room · not started';
@@ -597,7 +840,7 @@ function clearTranscript() {
   state.live.clear();
 }
 
-function showChatEmpty() {
+function showChatEmpty({ keepHeader = false } = {}) {
   $('#transcript').innerHTML = `<div class="transcript-inner"><div class="empty">
     <div class="empty-orb mark">${brandMark()}</div>
     <div class="big">How can I help you today?</div>
@@ -609,6 +852,7 @@ function showChatEmpty() {
       <button data-suggest="summarise this stack trace and tell me what to look at first">read a stack trace</button>
     </div>
   </div></div>`;
+  if (keepHeader) return;
   $('#peer-avatar').style.display = 'grid';
   $('#peer-avatar').style.placeItems = 'center';
   $('#peer-avatar').innerHTML = brandMark();
@@ -774,7 +1018,10 @@ async function openThread(id, kind = 'room') {
     if (m.role === 'user') addUserMessage(m.text);
     else addAgentMessage(m);
   }
-  if (!thread.messages.length) (k === 'chat' ? showChatEmpty : renderEmpty)('room');
+  if (!thread.messages.length) {
+    if (k === 'chat') showChatEmpty({ keepHeader: true });
+    else renderEmpty('room', { keepHeader: true });
+  }
   renderThreads();
   scrollDown(true);
   // fonts and blobs settle after first paint; pin to the real bottom
@@ -1183,6 +1430,10 @@ function wire() {
   };
 
   $('#stop').onclick = () => state.abort?.abort();
+  $('#create-cancel').onclick = closeCreate;
+  $('#create-run').onclick = runCreate;
+  $$('#create-modal [data-close]').forEach((n) => { n.onclick = closeCreate; });
+  $('#create-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runCreate(); } });
 
   function selectPanelTab(tab) {
     $$('#panel-tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === tab));

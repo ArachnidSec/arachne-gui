@@ -35,7 +35,7 @@ Ollama is up with a tool-capable model you are done; otherwise use **refresh** i
 the routing rail, or add an engine in `config.json`.
 
 ```bash
-node server/selftest.mjs         # 25 checks, no model required
+node server/selftest.mjs         # 31 checks, no model required
 node server/mockengine.mjs 8099  # a fake OpenAI-compatible engine, for demos
 ```
 
@@ -66,12 +66,16 @@ and clicking a project starts a thread inside it.
 
 Two columns, like a chat app rather than a dashboard:
 
-- **chat / agents** at the top of the window switches spaces. They are separate
-  namespaces, not a filter: thread lists, composer and actions all change
-- the left list shows whichever space you are in, with a **New thread** or
-  **New room** entry at the top — one action, and the space decides what it makes
-- in chat, threads can be grouped under **projects**; the search field filters
-  whatever list is showing
+- **chat / agents**, beside the title, switches spaces. They are separate
+  namespaces, not a filter: lists, composer and actions all change
+- the list is built from sections, each with its own **+**: *Pinned* (no +),
+  *Projects*, *Threads* in chat; *Pinned*, *Rooms*, *Agents* in agents. The **+**
+  opens a create dialog for that kind of thing
+- every row has a **⋯** menu on hover: pin, rename, delete (projects too)
+- a project expands in place with its chevron; it never creates anything on a
+  plain click. Its **+** starts a thread inside it
+- in agents, the *Agents* section lists the specialists; clicking one opens a
+  1:1 thread with that agent, created on first use
 - **evidence** slides over from the right — coverage, state, findings — and
   closes as soon as you go back to the conversation
 - **settings** (bottom left) holds engagement, agents, skills, routing, scope and

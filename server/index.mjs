@@ -21,6 +21,33 @@ const engagements = new Engagements(cfg, cfg.dataDir);
 const campaigns = new Campaigns(cfg.dataDir, store);
 const skills = loadSkills(path.join(ROOT, 'skills'));
 const runtime = { store, ledger, engagements, skills, campaigns };
+
+/**
+ * A stand-in reply for when no model is reachable. It exists so the interface is
+ * usable — and demonstrable — before anyone has routed an engine. It says so in
+ * the first line, and the message carries simulated: true so the UI can badge it.
+ */
+const simulatedReply = (agent, prompt) => {
+  const quoted = String(prompt || '').replace(/\s+/g, ' ').slice(0, 160);
+  return [
+    `**No model is reachable**, so this is a simulated reply from ${agent.name}.`,
+    `It is here so the room works before an engine is routed.`,
+    ``,
+    `> ${quoted}`,
+    ``,
+    `### what a real answer looks like`,
+    `- prose at reading width, under the agent name`,
+    `- code blocks that copy on click`,
+    `- tool calls listed beneath the message when a tool ran`,
+    ``,
+    '```c',
+    'char buffer[64];',
+    'strcpy(buffer, argv[1]);   /* the sink: no bound */',
+    '```',
+    ``,
+    `Route an engine in **settings → routing**, then send again.`,
+  ].join('\n');
+};
 const WEB = path.join(ROOT, 'web');
 
 const MIME = {
@@ -318,6 +345,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (route.startsWith('/api/projects/') && req.method === 'PATCH') {
+      const body = await readBody(req);
+      const project = store.renameProject(route.split('/')[3], body.name);
+      json(res, project ? 200 : 404, project ? { project } : { error: 'no such project' });
+      return;
+    }
+
     if (route.startsWith('/api/projects/') && req.method === 'DELETE') {
       store.deleteProject(route.split('/')[3]);
       json(res, 200, { ok: true });
@@ -331,6 +365,7 @@ const server = http.createServer(async (req, res) => {
         title: body.title || (kind === 'chat' ? 'new chat' : 'new room'),
         kind,
         projectId: body.projectId || null,
+        direct: Boolean(body.direct),
         members: kind === 'chat' ? ['chat'] : (body.members?.length ? body.members : ['scout', 'static', 'hunter']),
       });
       json(res, 200, { thread });
@@ -339,6 +374,21 @@ const server = http.createServer(async (req, res) => {
 
     if (route.startsWith('/api/threads/') && !route.includes('/send')) {
       const id = route.split('/')[3];
+      if (req.method === 'PATCH') {
+        const body = await readBody(req);
+        const thread = store.updateThread(id, body);
+        if (!thread) {
+          json(res, 404, { error: 'no such thread' });
+          return;
+        }
+        json(res, 200, { thread });
+        return;
+      }
+      if (req.method === 'DELETE') {
+        store.deleteThread(id);
+        json(res, 200, { ok: true });
+        return;
+      }
       const thread = store.getThread(id);
       if (!thread) {
         json(res, 404, { error: 'no such thread' });
@@ -530,6 +580,7 @@ const server = http.createServer(async (req, res) => {
             return;
           }
           let text2 = '';
+          let failure = null;
           for await (const ev of runTurn({
             cfg,
             agent,
@@ -542,6 +593,10 @@ const server = http.createServer(async (req, res) => {
             signal: controller.signal,
             emit: send,
           })) {
+            if (ev.type === 'error') {
+              failure = ev.message;
+              break;
+            }
             if (ev.type === 'token') text2 += ev.text;
             if (ev.type === 'replace') text2 = ev.text;
             if (ev.type === 'tool_result') {
@@ -563,6 +618,19 @@ const server = http.createServer(async (req, res) => {
               continue;
             }
             send(ev);
+          }
+
+          if (failure && !text2) {
+            // no model answered: keep the interface usable with a labelled stand-in
+            const reply = simulatedReply(agent, text);
+            send({ type: 'agent_start', agentId, model: 'simulated', engine: 'none' });
+            send({ type: 'token', agentId, text: reply });
+            const msg = store.appendMessage(thread.id, {
+              role: 'agent', agentId, text: reply, simulated: true, ms: 0, steps: 1,
+            });
+            send({ type: 'done', agentId, text: reply, ms: 0, steps: 1, simulated: true, messageId: msg?.id });
+          } else if (failure) {
+            send({ type: 'error', message: failure });
           }
         }
       } catch (err) {

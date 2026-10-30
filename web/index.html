@@ -13,6 +13,10 @@
   <aside class="sidebar">
     <div class="side-head">
       <div class="brand">arachne</div>
+      <div class="view-switch" id="view-switch" role="tablist">
+        <button data-view="chat" role="tab">chat</button>
+        <button data-view="room" class="on" role="tab">agents</button>
+      </div>
     </div>
 
     <div class="search">
@@ -37,10 +41,6 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-left">
-        <div class="view-switch" id="view-switch" role="tablist">
-          <button data-view="chat" role="tab">chat</button>
-          <button data-view="room" class="on" role="tab">agents</button>
-        </div>
         <div class="peer" id="peer">
         <div class="peer-avatar" id="peer-avatar"></div>
         <div class="peer-text">
@@ -187,6 +187,30 @@
     </div>
   </div>
 </aside>
+
+<div id="create-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card create-card">
+    <button class="modal-x" data-close aria-label="close">×</button>
+    <h2 id="create-title">Create New Project</h2>
+    <label class="create-field">
+      <span id="create-name-label">Project Name</span>
+      <input id="create-name" autocomplete="off" spellcheck="false" />
+    </label>
+    <label class="create-field" id="create-single-row">
+      <span id="create-single-label">Assistant</span>
+      <select id="create-single"></select>
+    </label>
+    <div class="create-field hidden" id="create-members-row">
+      <span>Members</span>
+      <div id="create-members" class="create-members"></div>
+    </div>
+    <div class="create-actions">
+      <button class="create-cancel" id="create-cancel">Cancel</button>
+      <button class="create-run" id="create-run">Create</button>
+    </div>
+  </div>
+</div>
 
 <div id="agent-modal" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-backdrop" data-close></div>

@@ -67,12 +67,14 @@ export class Store {
     this.flush();
   }
 
-  createThread({ title, members, kind = 'room', projectId = null } = {}) {
+  createThread({ title, members, kind = 'room', projectId = null, direct = false } = {}) {
     const thread = {
       id: uid(),
       title: title || 'untitled',
       kind,
       projectId: projectId || null,
+      direct: Boolean(direct),
+      pinned: false,
       members: members || ['scout', 'static', 'hunter', 'triage', 'scribe'],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -87,6 +89,31 @@ export class Store {
     return this.threads.get(id) || null;
   }
 
+  updateThread(id, patch = {}) {
+    const thread = this.threads.get(id);
+    if (!thread) return null;
+    if (typeof patch.title === 'string' && patch.title.trim()) thread.title = patch.title.trim().slice(0, 80);
+    if (typeof patch.pinned === 'boolean') thread.pinned = patch.pinned;
+    if (typeof patch.projectId === 'string' || patch.projectId === null) thread.projectId = patch.projectId;
+    thread.updatedAt = Date.now();
+    this.flush();
+    return thread;
+  }
+
+  deleteThread(id) {
+    const existed = this.threads.delete(id);
+    this.flush();
+    return existed;
+  }
+
+  renameProject(id, name) {
+    const project = this.projects.find((p) => p.id === id);
+    if (!project) return null;
+    if (name && String(name).trim()) project.name = String(name).trim().slice(0, 60);
+    this.flush();
+    return project;
+  }
+
   listThreads(kind) {
     return [...this.threads.values()]
       .filter((t) => !kind || (t.kind || 'room') === kind)
@@ -96,6 +123,8 @@ export class Store {
         title: t.title,
         kind: t.kind || 'room',
         projectId: t.projectId || null,
+        direct: Boolean(t.direct),
+        pinned: Boolean(t.pinned),
         members: t.members,
         updatedAt: t.updatedAt,
         messageCount: t.messages.length,

@@ -213,7 +213,7 @@ button { cursor: pointer; border: none; background: none; padding: 0; }
 .top-slot:empty { display: none; }
 .icon-only { padding: 6px 8px; }
 .app.collapsed { grid-template-columns: 0 minmax(0, 1fr); }
-.app.collapsed .sidebar { display: none; }
+.app.collapsed .sidebar { overflow: hidden; border-right: 0; padding: 0; }
 .topbar-left .peer { padding-left: 14px; border-left: 1px solid var(--line); }
 .peer { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .peer-avatar { width: 34px; height: 34px; flex: none; }

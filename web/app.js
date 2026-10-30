@@ -238,6 +238,7 @@ async function boot() {
     const deep = location.hash.match(/^#agent\/([\w-]+)$/);
     if (deep) openAgentModal(deep[1]);
     if (location.hash === '#chat') setMode('chat');
+    if (location.hash === '#collapsed' && state.setCollapsed) state.setCollapsed(true);
     if (location.hash === '#setup' && window.openPanel) window.openPanel('settings');
     if (location.hash === '#evidence' && window.openPanel) window.openPanel('evidence');
     const create = location.hash.match(/^#new=(project|thread|room|direct)$/);

@@ -172,6 +172,9 @@ async function main() {
   // sidebar collapse
   await click('#collapse-btn');
   check('sidebar collapses', await waitFor('document.querySelector(".app").classList.contains("collapsed")'));
+  const mainW = await evaluate('Math.round(document.querySelector(".main").getBoundingClientRect().width)');
+  const winW = await evaluate('window.innerWidth');
+  check('collapsed content keeps full width', mainW > winW * 0.9, `${mainW}px of ${winW}`);
   check('switcher moves to the topbar', await evaluate('document.querySelector("#top-slot #view-switch") !== null'));
   await click('#collapse-btn');
   check('sidebar restores', await waitFor('!document.querySelector(".app").classList.contains("collapsed")'));

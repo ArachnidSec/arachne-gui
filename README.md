@@ -74,6 +74,8 @@ Two columns, like a chat app rather than a dashboard:
   *Projects*, *Threads* in chat; *Pinned*, *Rooms*, *Agents* in agents. The **+**
   opens a create dialog for that kind of thing
 - every row has a **⋯** menu on hover: pin, rename, delete (projects too)
+- drag a thread onto a project to file it (or onto the *Threads* header to pull it
+  out); drag an agent onto a room to add it as a member
 - a project expands in place with its chevron; it never creates anything on a
   plain click. Its **+** starts a thread inside it
 - in agents, the *Agents* section lists the specialists; clicking one opens a

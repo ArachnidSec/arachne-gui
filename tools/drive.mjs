@@ -160,6 +160,19 @@ async function main() {
   await evaluate(`document.querySelector('#create-name').value = 'Test project'; document.querySelector('#create-run').click();`);
   check('project is created', await waitFor('[...document.querySelectorAll(".row.proj .row-name")].some(n => n.textContent === "Test project")', 5000));
 
+  // drag the thread into the project
+  const dragged = await evaluate(`(() => {
+    const thread = [...document.querySelectorAll('.row')].find(r => !r.classList.contains('proj') && !r.classList.contains('new') && r.querySelector('.row-name'));
+    const project = [...document.querySelectorAll('.row.proj')].find(r => r.textContent.includes('Test project'));
+    if (!thread || !project) return false;
+    const dt = new DataTransfer();
+    thread.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    project.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
+    project.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
+    return true;
+  })()`);
+  check('thread drags into a project', dragged && await waitFor('fetch("/api/threads").then(r => r.json()).then(d => d.threads.some(t => t.projectId))', 6000));
+
   // agents space
   await click('#view-switch button[data-view="room"]');
   await waitFor('document.querySelector("#view-switch button[data-view=room]").classList.contains("on")');
@@ -168,6 +181,19 @@ async function main() {
     if (!row) return false; row.click(); return true;
   })()`);
   check('agent click opens a chat directly', agentClicked && await waitFor('document.querySelector("#create-modal").classList.contains("hidden") && document.querySelector("#thread-title").textContent === "Mira"', 6000), await text('#thread-title'));
+
+  // drag an agent into a room
+  const agentDrop = await evaluate(`(() => {
+    const agent = [...document.querySelectorAll('.row')].find(r => r.querySelector('.row-name')?.textContent === 'Sable');
+    const room = [...document.querySelectorAll('.row')].find(r => r.textContent.includes('acme-checkout'));
+    if (!agent || !room) return false;
+    const dt = new DataTransfer();
+    agent.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    room.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
+    room.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
+    return true;
+  })()`);
+  check('agent drags into a room', agentDrop && await waitFor('fetch("/api/threads").then(r => r.json()).then(d => d.threads.some(t => t.title === "acme-checkout" && t.members.includes("triage")))', 6000));
 
   // sidebar collapse
   await click('#collapse-btn');

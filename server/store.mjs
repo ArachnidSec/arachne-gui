@@ -95,6 +95,7 @@ export class Store {
     if (typeof patch.title === 'string' && patch.title.trim()) thread.title = patch.title.trim().slice(0, 80);
     if (typeof patch.pinned === 'boolean') thread.pinned = patch.pinned;
     if (typeof patch.projectId === 'string' || patch.projectId === null) thread.projectId = patch.projectId;
+    if (patch.addMember) thread.members = [...new Set([...(thread.members || []), patch.addMember])];
     thread.updatedAt = Date.now();
     this.flush();
     return thread;

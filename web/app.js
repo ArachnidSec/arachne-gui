@@ -325,6 +325,29 @@ function sectionHead(label, onCreate) {
   return head;
 }
 
+function makeDraggable(node, payload) {
+  node.draggable = true;
+  node.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+    e.dataTransfer.effectAllowed = 'move';
+    node.classList.add('dragging');
+  });
+  node.addEventListener('dragend', () => node.classList.remove('dragging'));
+}
+
+function makeDropTarget(node, accept, onDrop) {
+  node.addEventListener('dragover', (e) => { e.preventDefault(); node.classList.add('drop'); });
+  node.addEventListener('dragleave', () => node.classList.remove('drop'));
+  node.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    node.classList.remove('drop');
+    let payload = null;
+    try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+    if (payload && accept(payload)) onDrop(payload);
+  });
+}
+
 function withMenu(row, items) {
   const dots = el('button', 'dots');
   dots.innerHTML = DOTS;
@@ -342,6 +365,7 @@ function threadRow(t, { child = false, active = false } = {}) {
       <div class="row-preview">${escapeHtml(t.preview || '')}</div>
     </div>`;
   row.onclick = () => openThread(t.id, t.kind || 'chat');
+  makeDraggable(row, { kind: 'thread', id: t.id });
   return withMenu(row, [
     { label: t.pinned ? 'Unpin' : 'Pin', onClick: () => patchThread(t.id, { pinned: !t.pinned }) },
     { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: t }) },
@@ -358,6 +382,7 @@ function roomRow(t, { active = false } = {}) {
       <div class="row-preview">${escapeHtml(t.preview || '')}</div>
     </div>`;
   row.onclick = () => openThread(t.id, 'room');
+  makeDropTarget(row, (p) => p.kind === 'agent', (p) => addMember(t.id, p.id));
   return withMenu(row, [
     { label: t.pinned ? 'Unpin' : 'Pin', onClick: () => patchThread(t.id, { pinned: !t.pinned }) },
     { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: t }) },
@@ -378,6 +403,7 @@ function projectRow(project) {
     if (open) openProjects.delete(project.id); else openProjects.add(project.id);
     renderThreads();
   };
+  makeDropTarget(row, (p) => p.kind === 'thread', (p) => moveToProject(p.id, project.id));
   const add = el('button', 'dots');
   add.innerHTML = PLUS;
   add.style.right = '26px';
@@ -401,6 +427,7 @@ function agentRow(agent) {
       <div class="row-preview">${escapeHtml(direct ? (direct.preview || agent.role) : `start a chat · ${agent.role.toLowerCase()}`)}</div>
     </div>`;
   row.onclick = () => startDirect(agent.id);
+  makeDraggable(row, { kind: 'agent', id: agent.id });
   if (direct) {
     withMenu(row, [
       { label: 'Rename', onClick: () => openCreate('rename', { target: 'thread', item: direct }) },
@@ -449,7 +476,9 @@ function renderThreads() {
       }
     }
 
-    box.appendChild(sectionHead('Threads', () => openCreate('thread')));
+    const threadsHead = sectionHead('Threads', () => openCreate('thread'));
+    makeDropTarget(threadsHead, (p) => p.kind === 'thread', (p) => moveToProject(p.id, null));
+    box.appendChild(threadsHead);
     for (const t of rest.filter((t) => !t.projectId)) {
       box.appendChild(threadRow(t, { active: t.id === state.chatThreadId }));
     }
@@ -470,6 +499,23 @@ function renderThreads() {
 }
 
 /* ---------------------------------------------------------------- actions */
+
+async function moveToProject(threadId, projectId) {
+  try {
+    await api(`/api/threads/${threadId}`, { method: 'PATCH', body: { projectId } });
+    if (projectId) openProjects.add(projectId);
+    await refreshThreads();
+    toast(projectId ? 'moved to project' : 'moved out of the project');
+  } catch (err) { toast(err.message); }
+}
+
+async function addMember(threadId, agentId) {
+  try {
+    await api(`/api/threads/${threadId}`, { method: 'PATCH', body: { addMember: agentId } });
+    await refreshThreads();
+    toast(`${agentOf(agentId).name} added to the room`);
+  } catch (err) { toast(err.message); }
+}
 
 async function startDirect(agentId) {
   const existing = state.roomThreads.find((t) => t.direct && (t.members || [])[0] === agentId);
